@@ -67,7 +67,7 @@ def get_oid(member, *indexes) -> str:
     return ".".join(parts)
 
 
-async def send_snmp_set_command(ip, community, oid, value, port=161):
+async def send_snmp_set_command(ip, community, oid, value, port):
     snmp_engine = SnmpEngine()
     try:
         error_indication, error_status, error_index, var_binds = await set_cmd(
@@ -102,7 +102,7 @@ async def send_snmp_set_command(ip, community, oid, value, port=161):
         await asyncio.sleep(0.1)
 
 
-async def send_snmp_get_command(ip, community, oid, port=161):
+async def send_snmp_get_command(ip, community, oid, port):
     snmp_engine = SnmpEngine()
     try:
         iterator = get_cmd(
@@ -137,7 +137,7 @@ async def send_snmp_get_command(ip, community, oid, port=161):
         await asyncio.sleep(0.1)
 
 
-async def get_int(ip: str, community: str, oid: str, port: int = 161) -> int:
+async def get_int(ip: str, community: str, oid: str, port: int) -> int:
     try:
         res = await send_snmp_get_command(ip, community, oid, port)
         if res is None:
@@ -151,7 +151,7 @@ async def get_int(ip: str, community: str, oid: str, port: int = 161) -> int:
         raise e
 
 
-async def get_phase_j2735_states_ntcip(ip: str, community: str, port: int = 161) -> dict:
+async def get_phase_j2735_states_ntcip(ip: str, community: str, port: int) -> dict:
     # Fetch all 6 octets concurrently:
     # Index 1: phases 1..8, Index 2: phases 9..16
     g1, g2, y1, y2, r1, r2 = await asyncio.gather(
@@ -187,7 +187,7 @@ async def get_phase_j2735_states_ntcip(ip: str, community: str, port: int = 161)
     return states
 
 
-async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, port: int = 161, ttc_type: str = 'min'):
+async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, port: int, ttc_type: str = 'min'):
     ttc = {}
     for sg in sig_grps:
         if ttc_type == 'min':
@@ -268,7 +268,7 @@ async def build_spat_for_intersection(
     get signal group states from TSC
     """
 
-    states = await get_signal_state(intersection_ip, 'administrator', intersection_id, signal_groups)
+    states = await get_signal_state(intersection_ip, 'public', intersection_id, signal_groups)
 
     ### this gets time from the local clock, if you want to get time from the controller, 
     #   you will need to change the time stamps here to get from NTCIP 
