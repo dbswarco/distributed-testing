@@ -125,29 +125,30 @@ async def send_snmp_get_command(ip, community, oid, port=161):
         await asyncio.sleep(0.1)
 
 
-async def get_phase_j2735_states_ntcip(ip: str, community: str, port: int = 161) -> dict:
-    async def get_int(oid_base: str, index: int) -> int:
-        try:
-            res = await send_snmp_get_command(ip, community, oid_base + '.' + str(index), port)
-            if res is None:
-                return 0
-            val = res[2]
-            # Handle PySNMP types or plain Python types
-            if hasattr(val, "prettyPrint"):
-                val = val.prettyPrint()
-            return int(val)  # works for int-ish strings as well
-        except Exception as e:
-            raise e
+async def get_int(ip: str, community: str, oid_base: str, index: int, port: int = 161) -> int:
+    try:
+        res = await send_snmp_get_command(ip, community, oid_base + '.' + str(index), port)
+        if res is None:
+            return 0
+        val = res[2]
+        # Handle PySNMP types or plain Python types
+        if hasattr(val, "prettyPrint"):
+            val = val.prettyPrint()
+        return int(val)  # works for int-ish strings as well
+    except Exception as e:
+        raise e
 
+
+async def get_phase_j2735_states_ntcip(ip: str, community: str, port: int = 161) -> dict:
     # Fetch all 6 octets concurrently:
     # Index 1: phases 1..8, Index 2: phases 9..16
     g1, g2, y1, y2, r1, r2 = await asyncio.gather(
-        get_int(NTCIP1202.Phase.StatusGroup.Greens, 1),
-        get_int(NTCIP1202.Phase.StatusGroup.Greens, 2),
-        get_int(NTCIP1202.Phase.StatusGroup.Yellows, 1),
-        get_int(NTCIP1202.Phase.StatusGroup.Yellows, 2),
-        get_int(NTCIP1202.Phase.StatusGroup.Reds, 1),
-        get_int(NTCIP1202.Phase.StatusGroup.Reds, 2),
+        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Greens, 1, port),
+        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Greens, 2, port),
+        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Yellows, 1, port),
+        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Yellows, 2, port),
+        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Reds, 1, port),
+        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Reds, 2, port),
     )
 
     def bits_lsb_first(byte_val: int) -> list[int]:
