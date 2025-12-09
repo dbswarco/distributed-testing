@@ -125,7 +125,7 @@ async def send_snmp_get_command(ip, community, oid, port=161):
         await asyncio.sleep(0.1)
 
 
-async def get_int(ip: str, community: str, oid_base: str, index: int, port: int = 161) -> int:
+async def get_int(ip: str, community: str, oid_base: str, index: str = '0', port: int = 161) -> int:
     try:
         res = await send_snmp_get_command(ip, community, oid_base + '.' + str(index), port)
         if res is None:
@@ -143,12 +143,12 @@ async def get_phase_j2735_states_ntcip(ip: str, community: str, port: int = 161)
     # Fetch all 6 octets concurrently:
     # Index 1: phases 1..8, Index 2: phases 9..16
     g1, g2, y1, y2, r1, r2 = await asyncio.gather(
-        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Greens, 1, port),
-        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Greens, 2, port),
-        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Yellows, 1, port),
-        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Yellows, 2, port),
-        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Reds, 1, port),
-        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Reds, 2, port),
+        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Greens, '1', port),
+        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Greens, '2', port),
+        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Yellows, '1', port),
+        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Yellows, '2', port),
+        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Reds, '1', port),
+        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Reds, '2', port),
     )
 
     def bits_lsb_first(byte_val: int) -> list[int]:
@@ -173,6 +173,22 @@ async def get_phase_j2735_states_ntcip(ip: str, community: str, port: int = 161)
             states[phase] = "dark"
 
     return states
+
+
+async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, port: int = 161, ttc_type: str = 'min'):
+    ttc = {}
+    for sg in sig_grps:
+        if ttc_type == 'min':
+            ttc[sg] = asyncio.run(get_int(ip, community, NTCIP1202.Phase.Timing.MinimumGreen, sg))
+        elif ttc_type == 'max':
+            ptn = asyncio.run(get_int(ip, community, NTCIP1202.Coord.Pattern))
+            split, y, r = await asyncio.gather(
+                get_int(ip, community, NTCIP1202.Coord.Split, str(ptn) + '.' + str(sg), port),
+                get_int(ip, community, NTCIP1202.Phase.Timing.YellowChange, str(sg), port),
+                get_int(ip, community, NTCIP1202.Phase.Timing.RedClear, str(sg), port),
+            )
+            ttc[sg] = split - y - r
+        return ttc
 
 
 def compute_moy_and_time_mark():
