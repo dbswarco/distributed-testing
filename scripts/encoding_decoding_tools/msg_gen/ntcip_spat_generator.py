@@ -201,7 +201,7 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
                 get_int(ip, community, get_oid(NTCIP1202.Controller.LocalTime), port),
                 get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.MinimumGreen, sg), port)
             )
-            ttc[sg] = epoch + mg
+            ttc[sg] = int((epoch + mg) * 10)
 
         elif ttc_type == 'max':
             ptn = await get_int(ip, community, get_oid(NTCIP1202.Coord.Pattern.Status), port)
@@ -211,7 +211,7 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
                 get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.YellowChange, sg), port),
                 get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.RedClear, sg), port)
             )
-            ttc[sg] = epoch + split - (y / 10) - (r / 10)
+            ttc[sg] = int((epoch + split - (y / 10) - (r / 10)) * 10)
 
     return [epoch, ttc]
 
