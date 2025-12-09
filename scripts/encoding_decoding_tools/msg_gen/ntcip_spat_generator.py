@@ -9,26 +9,36 @@ from argparse import RawTextHelpFormatter
 import asyncio
 from pysnmp.hlapi.v3arch.asyncio import *
 import logging
-import enum
 
 import j2735_202409
+
+try:
+    # Python 3.11+
+    from enum import StrEnum
+except ImportError:
+    import enum
+    class StrEnum(str, enum.Enum):
+        def __new__(cls, value):
+            # Create a str, and attach it as the Enum value
+            obj = str.__new__(cls, value)
+            obj._value_ = value
+            return obj
+        def __str__(self):
+            return str(self.value)
+        def __repr__(self):
+            return f"{self.value}"
 
 MessageFrame = j2735_202409.MessageFrame.MessageFrame
 
 module_logger = logging.getLogger('main.snmp_getsetter')
 
-class StrEnum(str, enum.Enum):
-    pass
-
 class NTCIP1202:
     class Phase:
-        @enum.unique
         class Timing(StrEnum):
             MinimumGreen = '1.3.6.1.4.1.1206.4.2.1.1.2.1.4'
             Maximum1 = '1.3.6.1.4.1.1206.4.2.1.1.2.1.6'
             YellowChange = '1.3.6.1.4.1.1206.4.2.1.1.2.1.8'
             RedClear = '1.3.6.1.4.1.1206.4.2.1.1.2.1.9'
-        @enum.unique
         class StatusGroup(StrEnum):
             Greens = '1.3.6.1.4.1.1206.4.2.1.1.4.1.4'
             Yellows = '1.3.6.1.4.1.1206.4.2.1.1.4.1.3'
@@ -37,15 +47,12 @@ class NTCIP1202:
             PedClears = '1.3.6.1.4.1.1206.4.2.1.1.4.1.6'
             DontWalks = '1.3.6.1.4.1.1206.4.2.1.1.4.1.5'
     class Coord:
-        @enum.unique
         class Split(StrEnum):
             Time = '1.3.6.1.4.1.1206.4.2.1.4.9.1.3'
-        @enum.unique
         class Pattern(StrEnum):
             Status = '1.3.6.1.4.1.1206.4.2.1.4.10'
 
 class McCain:
-    @enum.unique
     class DetectorControlState(StrEnum):
         Vehicle = '1.3.6.1.4.1.1206.3.21.2.13.4.1.1'
         Pedestrian = '1.3.6.1.4.1.1206.3.21.2.14.4.1.1'
@@ -56,12 +63,7 @@ class SnmpGetError(Exception):
 
 
 def get_oid(member, *indexes) -> str:
-    """
-    Build an OID string from a StrEnum member and optional indexes.
-    Example:
-        oid(NTCIP1202.Phase.Timing.MinimumGreen, 2)
-    """
-    parts = [str(member), *(str(i) for i in indexes if i)]
+    parts = [str(member), *(str(i) for i in indexes if i is not None and i != '')]
     return ".".join(parts)
 
 
@@ -191,7 +193,7 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
         if ttc_type == 'min':
             ttc[sg] = await get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.MinimumGreen, sg))
         elif ttc_type == 'max':
-            ptn = await get_int(ip, community, get_oid(NTCIP1202.Coord.Pattern))
+            ptn = await get_int(ip, community, get_oid(NTCIP1202.Coord.Pattern.Status))
             split, y, r = await asyncio.gather(
                 get_int(ip, community, get_oid(NTCIP1202.Coord.Split, ptn, sg), port),
                 get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.YellowChange, sg), port),
@@ -262,6 +264,7 @@ async def build_spat_for_intersection(
     """
 
     """
+    get signal group states from TSC
     get signal group states from TSC
     """
 
