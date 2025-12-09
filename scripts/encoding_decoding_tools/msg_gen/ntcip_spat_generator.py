@@ -125,7 +125,7 @@ async def send_snmp_get_command(ip, community, oid, port=161):
         await asyncio.sleep(0.1)
 
 
-async def get_phase_j2735_states_ntcip(ip: str, community: str, port: int = 161) -> list:
+async def get_phase_j2735_states_ntcip(ip: str, community: str, port: int = 161) -> dict:
     async def get_int(oid_base: str, index: int) -> int:
         try:
             res = await send_snmp_get_command(ip, community, oid_base + '.' + str(index), port)
@@ -159,17 +159,17 @@ async def get_phase_j2735_states_ntcip(ip: str, community: str, port: int = 161)
     y_bits = bits_lsb_first(y1) + bits_lsb_first(y2)
     r_bits = bits_lsb_first(r1) + bits_lsb_first(r2)
 
-    states = []
+    states = {}
     for phase in range(1, 17):
         i = phase - 1  # 0-based index
         if r_bits[i]:
-            states.append("stop-And-Remain")
+            states[phase] = "stop-And-Remain"
         elif y_bits[i]:
-            states.append("protected-clearance")
+            states[phase] = "protected-clearance"
         elif g_bits[i]:
-            states.append("protected-Movement-Allowed")
+            states[phase] = "protected-Movement-Allowed"
         else:
-            states.append("dark")
+            states[phase] = "dark"
 
     return states
 
