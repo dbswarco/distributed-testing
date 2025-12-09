@@ -55,6 +55,16 @@ class SnmpGetError(Exception):
     pass
 
 
+def get_oid(member, *indexes) -> str:
+    """
+    Build an OID string from a StrEnum member and optional indexes.
+    Example:
+        oid(NTCIP1202.Phase.Timing.MinimumGreen, 2)
+    """
+    parts = [str(member), *(str(i) for i in indexes if i)]
+    return ".".join(parts)
+
+
 async def send_snmp_set_command(ip, community, oid, value, port=161):
     snmp_engine = SnmpEngine()
     try:
@@ -125,9 +135,9 @@ async def send_snmp_get_command(ip, community, oid, port=161):
         await asyncio.sleep(0.1)
 
 
-async def get_int(ip: str, community: str, oid_base: str, index: str = '0', port: int = 161) -> int:
+async def get_int(ip: str, community: str, oid: str, port: int = 161) -> int:
     try:
-        res = await send_snmp_get_command(ip, community, oid_base + '.' + str(index), port)
+        res = await send_snmp_get_command(ip, community, oid, port)
         if res is None:
             return 0
         val = res[2]
@@ -143,12 +153,12 @@ async def get_phase_j2735_states_ntcip(ip: str, community: str, port: int = 161)
     # Fetch all 6 octets concurrently:
     # Index 1: phases 1..8, Index 2: phases 9..16
     g1, g2, y1, y2, r1, r2 = await asyncio.gather(
-        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Greens, '1', port),
-        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Greens, '2', port),
-        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Yellows, '1', port),
-        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Yellows, '2', port),
-        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Reds, '1', port),
-        get_int(ip, community, NTCIP1202.Phase.StatusGroup.Reds, '2', port),
+        get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Greens, '1'), port),
+        get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Greens, '2'), port),
+        get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Yellows, '1'), port),
+        get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Yellows, '2'), port),
+        get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Reds, '1'), port),
+        get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Reds, '2'), port),
     )
 
     def bits_lsb_first(byte_val: int) -> list[int]:
@@ -179,16 +189,41 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
     ttc = {}
     for sg in sig_grps:
         if ttc_type == 'min':
-            ttc[sg] = asyncio.run(get_int(ip, community, NTCIP1202.Phase.Timing.MinimumGreen, sg))
+            ttc[sg] = await get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.MinimumGreen, sg))
         elif ttc_type == 'max':
-            ptn = asyncio.run(get_int(ip, community, NTCIP1202.Coord.Pattern))
+            ptn = await get_int(ip, community, get_oid(NTCIP1202.Coord.Pattern))
             split, y, r = await asyncio.gather(
-                get_int(ip, community, NTCIP1202.Coord.Split, str(ptn) + '.' + str(sg), port),
-                get_int(ip, community, NTCIP1202.Phase.Timing.YellowChange, str(sg), port),
-                get_int(ip, community, NTCIP1202.Phase.Timing.RedClear, str(sg), port),
+                get_int(ip, community, get_oid(NTCIP1202.Coord.Split, ptn, sg), port),
+                get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.YellowChange, sg), port),
+                get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.RedClear, sg), port),
             )
             ttc[sg] = split - y - r
         return ttc
+
+
+async def get_signal_state(ip, community, int_id, sig_grps):
+    sg_states, sg_ttc_min, sg_ttc_max = await asyncio.gather(
+        get_phase_j2735_states_ntcip(ip, community, 10000 + int_id),
+        get_phase_j2735_times_ntcip(ip, community, sig_grps, 10000 + int_id, 'min'),
+        get_phase_j2735_times_ntcip(ip, community, sig_grps, 10000 + int_id, 'max')
+    )
+
+    states = {}
+    for sg, event_state in sg_states.items():
+        states[sg] = {
+            "signalGroup": sg,
+            "state-time-speed": [
+                {
+                    "eventState": event_state,
+                    "timing": {
+                        # Both are INTEGER TimeMark values
+                        "minEndTime": sg_ttc_min.get(sg),
+                        "maxEndTime": sg_ttc_max.get(sg),
+                    },
+                }
+            ],
+        }
+    return states
 
 
 def compute_moy_and_time_mark():
@@ -215,9 +250,7 @@ def compute_moy_and_time_mark():
     return moy, int(time_mark)
 
 
-
-
-def build_spat_for_intersection(
+async def build_spat_for_intersection(
     intersection_id,
     intersection_ip,
     moy,
@@ -232,7 +265,7 @@ def build_spat_for_intersection(
     get signal group states from TSC
     """
 
-    states = asyncio.run(get_phase_j2735_states_ntcip(intersection_ip, 'administrator', 10000 + intersection_id))
+    states = await get_signal_state(intersection_ip, 'administrator', intersection_id, signal_groups)
 
     ### this gets time from the local clock, if you want to get time from the controller, 
     #   you will need to change the time stamps here to get from NTCIP 
@@ -337,7 +370,7 @@ def load_phase_config(path):
     return intersections
 
 
-def main():
+async def main():
     parser = argparse.ArgumentParser(
         formatter_class=RawTextHelpFormatter, description=(
             "Generate SPaT using signal group states polled from an NTCIP TSC and send as "
@@ -438,7 +471,7 @@ def main():
                 intersection_ip = intersection.get("ip")
                 debug_info["signal_groups"] = signal_groups
 
-                spat_jer = build_spat_for_intersection(
+                spat_jer = await build_spat_for_intersection(
                     intersection_id,
                     intersection_ip,
                     moy,
@@ -466,4 +499,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
