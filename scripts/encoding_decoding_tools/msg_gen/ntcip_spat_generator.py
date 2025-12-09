@@ -211,7 +211,7 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
                 get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.YellowChange, sg), port),
                 get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.RedClear, sg), port)
             )
-            ttc[sg] = split - (y / 10) - (r / 10)
+            ttc[sg] = epoch + split - (y / 10) - (r / 10)
 
     return [epoch, ttc]
 
@@ -223,9 +223,10 @@ async def get_signal_state(ip, community, int_id, sig_grps):
         get_phase_j2735_times_ntcip(ip, community, sig_grps, 10000 + int_id, 'max')
     )
 
-    states = {}
+    states = []
     for sg, event_state in sg_states.items():
-        states[sg] = {
+        states.append(
+            {
             "signalGroup": sg,
             "state-time-speed": [
                 {
@@ -238,6 +239,7 @@ async def get_signal_state(ip, community, int_id, sig_grps):
                 }
             ],
         }
+        )
 
     return sg_ttc_max[0], states
 
@@ -270,8 +272,7 @@ async def build_spat_for_intersection(
     intersection_id,
     intersection_ip,
     moy,
-    time_mark,
-    signal_groups,
+    signal_groups
 ):
     """
     Build a SPaT JER dict for a single intersection, given existing timing/state info.
