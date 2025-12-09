@@ -141,7 +141,8 @@ async def get_int(ip: str, community: str, oid: str, port: int) -> int:
     try:
         res = await send_snmp_get_command(ip, community, oid, port)
         if res is None:
-            return 0
+            msg = f"{ip}: SNMP GET {oid} agent error: no value returned"
+            raise SnmpGetError(msg)
         val = res[2]
         # Handle PySNMP types or plain Python types
         if hasattr(val, "prettyPrint"):
@@ -198,8 +199,9 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
                 get_int(ip, community, get_oid(NTCIP1202.Coord.Split.Time, ptn, sg), port),
                 get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.YellowChange, sg), port),
                 get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.RedClear, sg), port),
+
             )
-            ttc[sg] = split - y - r
+            ttc[sg] = split - (y / 10) - (r / 10)
     return ttc
 
 
