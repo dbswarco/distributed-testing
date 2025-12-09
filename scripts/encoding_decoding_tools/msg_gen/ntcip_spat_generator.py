@@ -9,6 +9,7 @@ from argparse import RawTextHelpFormatter
 import asyncio
 from pysnmp.hlapi.v3arch.asyncio import *
 import logging
+from datetime import datetime, timezone, timedelta
 
 import j2735_202409
 
@@ -51,6 +52,8 @@ class NTCIP1202:
             Time = '1.3.6.1.4.1.1206.4.2.1.4.9.1.3'
         class Pattern(StrEnum):
             Status = '1.3.6.1.4.1.1206.4.2.1.4.10'
+    class Controller(StrEnum):
+        LocalTime = '1.3.6.1.4.1.1206.4.2.6.3.6'
 
 class McCain:
     class DetectorControlState(StrEnum):
@@ -192,16 +195,22 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
     ttc = {}
     for sg in sig_grps:
         if ttc_type == 'min':
-            ttc[sg] = await get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.MinimumGreen, sg), port)
+            epoch, mg = await asyncio.gather(
+                get_int(ip, community, get_oid(NTCIP1202.Controller.LocalTime), port),
+                get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.MinimumGreen, sg), port)
+            )
+            ttc[sg] = epoch + mg
+
         elif ttc_type == 'max':
             ptn = await get_int(ip, community, get_oid(NTCIP1202.Coord.Pattern.Status), port)
-            split, y, r = await asyncio.gather(
+            epoch, split, y, r = await asyncio.gather(
+                get_int(ip, community, get_oid(NTCIP1202.Controller.LocalTime), port),
                 get_int(ip, community, get_oid(NTCIP1202.Coord.Split.Time, ptn, sg), port),
                 get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.YellowChange, sg), port),
-                get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.RedClear, sg), port),
-
+                get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.RedClear, sg), port)
             )
             ttc[sg] = split - (y / 10) - (r / 10)
+
     return ttc
 
 
@@ -227,6 +236,7 @@ async def get_signal_state(ip, community, int_id, sig_grps):
                 }
             ],
         }
+
     return states
 
 
