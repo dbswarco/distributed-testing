@@ -186,7 +186,7 @@ async def get_phase_j2735_states_ntcip(ip: str, community: str, port: int) -> di
         elif g_bits[i]:
             states[phase] = "protected-Movement-Allowed"
         else:
-            states[phase] = "dark"
+            continue
 
     return states
 
