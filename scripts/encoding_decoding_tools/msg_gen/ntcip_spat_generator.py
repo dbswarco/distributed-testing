@@ -191,16 +191,16 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
     ttc = {}
     for sg in sig_grps:
         if ttc_type == 'min':
-            ttc[sg] = await get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.MinimumGreen, sg))
+            ttc[sg] = await get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.MinimumGreen, sg), port)
         elif ttc_type == 'max':
-            ptn = await get_int(ip, community, get_oid(NTCIP1202.Coord.Pattern.Status))
+            ptn = await get_int(ip, community, get_oid(NTCIP1202.Coord.Pattern.Status), port)
             split, y, r = await asyncio.gather(
-                get_int(ip, community, get_oid(NTCIP1202.Coord.Split, ptn, sg), port),
+                get_int(ip, community, get_oid(NTCIP1202.Coord.Split.Time, ptn, sg), port),
                 get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.YellowChange, sg), port),
                 get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.RedClear, sg), port),
             )
             ttc[sg] = split - y - r
-        return ttc
+    return ttc
 
 
 async def get_signal_state(ip, community, int_id, sig_grps):
