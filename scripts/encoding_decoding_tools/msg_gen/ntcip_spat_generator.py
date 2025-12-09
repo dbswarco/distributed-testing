@@ -193,6 +193,8 @@ async def get_phase_j2735_states_ntcip(ip: str, community: str, port: int) -> di
 
 async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, port: int, ttc_type: str = 'min'):
     ttc = {}
+    epoch = 0
+
     for sg in sig_grps:
         if ttc_type == 'min':
             epoch, mg = await asyncio.gather(
@@ -211,7 +213,7 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
             )
             ttc[sg] = split - (y / 10) - (r / 10)
 
-    return ttc
+    return [epoch, ttc]
 
 
 async def get_signal_state(ip, community, int_id, sig_grps):
@@ -230,14 +232,14 @@ async def get_signal_state(ip, community, int_id, sig_grps):
                     "eventState": event_state,
                     "timing": {
                         # Both are INTEGER TimeMark values
-                        "minEndTime": sg_ttc_min.get(sg),
-                        "maxEndTime": sg_ttc_max.get(sg),
+                        "minEndTime": sg_ttc_min[1].get(sg),
+                        "maxEndTime": sg_ttc_max[1].get(sg),
                     },
                 }
             ],
         }
 
-    return states
+    return sg_ttc_max[0], states
 
 
 def compute_moy_and_time_mark():
@@ -275,11 +277,6 @@ async def build_spat_for_intersection(
     Build a SPaT JER dict for a single intersection, given existing timing/state info.
     """
 
-    """
-    get signal group states from TSC
-    get signal group states from TSC
-    """
-
     states = await get_signal_state(intersection_ip, 'public', intersection_id, signal_groups)
 
     ### this gets time from the local clock, if you want to get time from the controller, 
@@ -288,15 +285,15 @@ async def build_spat_for_intersection(
     spat = {
         "messageId": 19,
         "value": {
-            "timeStamp": int(time_mark),  # DSecond-ish; still 0.1s from hour, but valid INTEGER
+            "timeStamp": states[0],  # DSecond-ish; still 0.1s from hour, but valid INTEGER
             "intersections": [
                 {
                     "id": {"id": int(intersection_id)},
                     "revision": 0,
                     "status": "0000",
                     "moy": int(moy),
-                    "timeStamp": int(time_mark),
-                    "states": states,
+                    "timeStamp": states[0],
+                    "states": states[1],
                 }
             ],
         },
