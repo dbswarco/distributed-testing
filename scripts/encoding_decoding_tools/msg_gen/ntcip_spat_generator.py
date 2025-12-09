@@ -488,8 +488,7 @@ async def main():
                     intersection_id,
                     intersection_ip,
                     moy,
-                    time_mark,
-                    signal_groups,
+                    signal_groups
                 )
                 if args.verbose:
                     print(f"spat_jer: {spat_jer}")
