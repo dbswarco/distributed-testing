@@ -32,6 +32,24 @@ MessageFrame = j2735_202409.MessageFrame.MessageFrame
 
 module_logger = logging.getLogger('main.snmp_getsetter')
 
+# function time debugging ---
+
+import time
+from functools import wraps
+
+def timed(func):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        t0 = time.perf_counter_ns()
+        try:
+            return await func(*args, **kwargs)
+        finally:
+            dt_ns = time.perf_counter_ns() - t0
+            dt_s = dt_ns / 1_000_000_000
+            print(f"{func.__name__} took {dt_s:.6f}s ({dt_ns/1_000_000:.3f} ms)")
+    return wrapper
+
+
 class NTCIP1202:
     class Phase:
         class Timing(StrEnum):
@@ -156,26 +174,41 @@ async def get_int(ip: str, community: str, oid: str, port: int) -> int:
         raise e
 
 
+@timed
 async def get_phase_j2735_states_ntcip(ip: str, community: str, sig_grps: list, port: int) -> dict:
-    # Fetch all 6 octets concurrently:
-    # Index 1: phases 1..8, Index 2: phases 9..16
-    g1, g2, y1, y2, r1, r2 = await asyncio.gather(
-        get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Greens, '1'), port),
-        get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Greens, '2'), port),
-        get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Yellows, '1'), port),
-        get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Yellows, '2'), port),
-        get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Reds, '1'), port),
-        get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Reds, '2'), port),
-    )
 
     def bits_lsb_first(byte_val: int) -> list[int]:
         # Return 8 bits least-significant-bit first: bit 0 -> phase 1 (or 9), bit 7 -> phase 8 (or 16)
         return [(byte_val >> i) & 1 for i in range(8)]
 
-    # Build per-phase bit arrays for phases 1..16 (not strings)
-    g_bits = bits_lsb_first(g1) + bits_lsb_first(g2)  # [phase1..phase16]
-    y_bits = bits_lsb_first(y1) + bits_lsb_first(y2)
-    r_bits = bits_lsb_first(r1) + bits_lsb_first(r2)
+    if any(v > 8 for v in sig_grps):
+        # Index 1: phases 1..8, Index 2: phases 9..16
+        g1, g2, y1, y2, r1, r2 = await asyncio.gather(
+            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Greens, '1'), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Greens, '2'), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Yellows, '1'), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Yellows, '2'), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Reds, '1'), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Reds, '2'), port),
+        )
+
+        # Build per-phase bit arrays for phases 1..16 (not strings)
+        g_bits = bits_lsb_first(g1) + bits_lsb_first(g2)  # [phase1..phase16]
+        y_bits = bits_lsb_first(y1) + bits_lsb_first(y2)
+        r_bits = bits_lsb_first(r1) + bits_lsb_first(r2)
+
+    else:
+        # Index 1: phases 1..8
+        g1, y1, r1 = await asyncio.gather(
+            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Greens, '1'), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Yellows, '1'), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Reds, '1'), port),
+        )
+
+        # Build per-phase bit arrays for phases 1..8 (not strings)
+        g_bits = bits_lsb_first(g1)  # [phase1..phase8]
+        y_bits = bits_lsb_first(y1)
+        r_bits = bits_lsb_first(r1)
 
     states = {}
     for sg in sig_grps:
@@ -192,40 +225,33 @@ async def get_phase_j2735_states_ntcip(ip: str, community: str, sig_grps: list, 
     return states
 
 
-async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, port: int, ttc_type: str = 'min'):
+@timed
+async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, port: int):
     time_to_change = {}
     controller_gmt_epoch = 0
 
     for sg in sig_grps:
-        if ttc_type == 'min':
-            controller_localtz_epoch, tz_differential, min_grn = await asyncio.gather(
-                get_int(ip, community, get_oid(NTCIP1202.Controller.LocalTime), port),
-                get_int(ip, community, get_oid(NTCIP1202.Controller.StandardTimeZone), port),
-                get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.MinimumGreen, sg), port)
-            )
-            controller_gmt_epoch = (controller_localtz_epoch - tz_differential) * 10
-            time_to_change[sg] = int(controller_gmt_epoch + min_grn)
-
-        elif ttc_type == 'max':
-            ptn = await get_int(ip, community, get_oid(NTCIP1202.Coord.Pattern.Status), port)
-            controller_localtz_epoch, tz_differential, split, yellow, red = await asyncio.gather(
-                get_int(ip, community, get_oid(NTCIP1202.Controller.LocalTime), port),
-                get_int(ip, community, get_oid(NTCIP1202.Controller.StandardTimeZone), port),
-                get_int(ip, community, get_oid(NTCIP1202.Coord.Split.Time, ptn, sg), port),
-                get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.YellowChange, sg), port),
-                get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.RedClear, sg), port)
-            )
-            controller_gmt_epoch = (controller_localtz_epoch - tz_differential) * 10
-            time_to_change[sg] = int(controller_gmt_epoch + split - (yellow / 10) - (red / 10))
+        ptn = await get_int(ip, community, get_oid(NTCIP1202.Coord.Pattern.Status), port)
+        controller_localtz_epoch, tz_differential, min_grn, split, yellow, red = await asyncio.gather(
+            get_int(ip, community, get_oid(NTCIP1202.Controller.LocalTime), port),
+            get_int(ip, community, get_oid(NTCIP1202.Controller.StandardTimeZone), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.MinimumGreen, sg), port),
+            get_int(ip, community, get_oid(NTCIP1202.Coord.Split.Time, ptn, sg), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.YellowChange, sg), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.RedClear, sg), port)
+        )
+        controller_gmt_epoch = (controller_localtz_epoch - tz_differential) * 10
+        time_to_change[sg] = {'min': int(controller_gmt_epoch + min_grn),
+                              'max': int(controller_gmt_epoch + split - (yellow / 10) - (red / 10))}
 
     return [controller_gmt_epoch, time_to_change]
 
 
+@timed
 async def get_signal_state(ip, community, int_id, sig_grps):
-    sg_states, sg_ttc_min, sg_ttc_max = await asyncio.gather(
+    sg_states, sg_ttc = await asyncio.gather(
         get_phase_j2735_states_ntcip(ip, community, sig_grps, 10000 + int_id),
-        get_phase_j2735_times_ntcip(ip, community, sig_grps, 10000 + int_id, 'min'),
-        get_phase_j2735_times_ntcip(ip, community, sig_grps, 10000 + int_id, 'max')
+        get_phase_j2735_times_ntcip(ip, community, sig_grps, 10000 + int_id),
     )
 
     states = []
@@ -238,15 +264,15 @@ async def get_signal_state(ip, community, int_id, sig_grps):
                     "eventState": event_state,
                     "timing": {
                         # Both are INTEGER TimeMark values
-                        "minEndTime": sg_ttc_min[1].get(sg),
-                        "maxEndTime": sg_ttc_max[1].get(sg),
+                        "minEndTime": sg_ttc[1].get(sg).get('min'),
+                        "maxEndTime": sg_ttc[1].get(sg).get('max'),
                     },
                 }
             ],
         }
         )
 
-    return sg_ttc_max[0], states
+    return sg_ttc[0], states
 
 
 def compute_moy_and_time_mark():
@@ -273,6 +299,7 @@ def compute_moy_and_time_mark():
     return moy, int(time_mark)
 
 
+@timed
 async def build_spat_for_intersection(
     intersection_id,
     intersection_ip,
