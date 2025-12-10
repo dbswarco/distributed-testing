@@ -53,6 +53,8 @@ class NTCIP1202:
             Status = '1.3.6.1.4.1.1206.4.2.1.4.10'
     class Controller(StrEnum):
         LocalTime = '1.3.6.1.4.1.1206.4.2.6.3.6'
+        StandardTimeZone = '1.3.6.1.4.1.1206.4.2.6.3.5'
+        GlobalTime = '1.3.6.1.4.1.1206.4.2.6.3.1'
 
 class McCain:
     class DetectorControlState(StrEnum):
@@ -191,30 +193,32 @@ async def get_phase_j2735_states_ntcip(ip: str, community: str, sig_grps: list, 
 
 
 async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, port: int, ttc_type: str = 'min'):
-    ttc = {}
-    epoch = 0
+    time_to_change = {}
+    controller_gmt_epoch = 0
 
     for sg in sig_grps:
         if ttc_type == 'min':
-            epoch, mg = await asyncio.gather(
+            controller_localtz_epoch, tz_differential, min_grn = await asyncio.gather(
                 get_int(ip, community, get_oid(NTCIP1202.Controller.LocalTime), port),
+                get_int(ip, community, get_oid(NTCIP1202.Controller.StandardTimeZone), port),
                 get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.MinimumGreen, sg), port)
             )
-            epoch *= 10
-            ttc[sg] = int(epoch + mg)
+            controller_gmt_epoch = (controller_localtz_epoch - tz_differential) * 10
+            time_to_change[sg] = int(controller_gmt_epoch + min_grn)
 
         elif ttc_type == 'max':
             ptn = await get_int(ip, community, get_oid(NTCIP1202.Coord.Pattern.Status), port)
-            epoch, split, y, r = await asyncio.gather(
+            controller_localtz_epoch, tz_differential, split, yellow, red = await asyncio.gather(
                 get_int(ip, community, get_oid(NTCIP1202.Controller.LocalTime), port),
+                get_int(ip, community, get_oid(NTCIP1202.Controller.StandardTimeZone), port),
                 get_int(ip, community, get_oid(NTCIP1202.Coord.Split.Time, ptn, sg), port),
                 get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.YellowChange, sg), port),
                 get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.RedClear, sg), port)
             )
-            epoch *= 10
-            ttc[sg] = int(epoch + split - (y / 10) - (r / 10))
+            controller_gmt_epoch = (controller_localtz_epoch - tz_differential) * 10
+            time_to_change[sg] = int(controller_gmt_epoch + split - (yellow / 10) - (red / 10))
 
-    return [epoch, ttc]
+    return [controller_gmt_epoch, time_to_change]
 
 
 async def get_signal_state(ip, community, int_id, sig_grps):
@@ -468,6 +472,15 @@ async def main():
     )
 
     try:
+        # Sync controller clocks with PC since virtual controllers run slow over time
+        for intersection in intersections:
+            intersection_id = intersection["id"]
+            intersection_ip = intersection.get("ip")
+            current_datetime = int(datetime.now().timestamp())
+            await send_snmp_set_command(intersection_ip, 'administrator',
+                                              NTCIP1202.Controller.GlobalTime, Counter32(current_datetime),
+                                              intersection_id + 10000)
+
         while True:
             loop_start = time.time()
 
