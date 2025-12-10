@@ -3,13 +3,12 @@ import time
 import json
 import socket
 import os
-from datetime import datetime
 import argparse
 from argparse import RawTextHelpFormatter
 import asyncio
 from pysnmp.hlapi.v3arch.asyncio import *
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 import j2735_202409
 
@@ -252,7 +251,7 @@ def compute_moy_and_time_mark():
       - Minute of year (moy)
       - TimeMark in 0.1s units from the top of the current UTC hour (0..35999)
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Minute of year (unchanged)
     moy = ((now.timetuple().tm_yday - 1) * 24 * 60) + now.hour * 60 + now.minute
@@ -476,7 +475,7 @@ async def main():
             moy, time_mark = compute_moy_and_time_mark()
 
             debug_info = {
-                "timestamp": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
+                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
             }
 
             # Build, encode, log, and send for each intersection
