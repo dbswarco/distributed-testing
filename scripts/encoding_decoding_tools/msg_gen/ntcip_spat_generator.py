@@ -155,7 +155,7 @@ async def get_int(ip: str, community: str, oid: str, port: int) -> int:
         raise e
 
 
-async def get_phase_j2735_states_ntcip(ip: str, community: str, port: int) -> dict:
+async def get_phase_j2735_states_ntcip(ip: str, community: str, sig_grps: list, port: int) -> dict:
     # Fetch all 6 octets concurrently:
     # Index 1: phases 1..8, Index 2: phases 9..16
     g1, g2, y1, y2, r1, r2 = await asyncio.gather(
@@ -177,14 +177,14 @@ async def get_phase_j2735_states_ntcip(ip: str, community: str, port: int) -> di
     r_bits = bits_lsb_first(r1) + bits_lsb_first(r2)
 
     states = {}
-    for phase in range(1, 17):
-        i = phase - 1  # 0-based index
+    for sg in sig_grps:
+        i = sg - 1  # 0-based index
         if r_bits[i]:
-            states[phase] = "stop-And-Remain"
+            states[sg] = "stop-And-Remain"
         elif y_bits[i]:
-            states[phase] = "protected-clearance"
+            states[sg] = "protected-clearance"
         elif g_bits[i]:
-            states[phase] = "protected-Movement-Allowed"
+            states[sg] = "protected-Movement-Allowed"
         else:
             continue
 
@@ -201,7 +201,8 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
                 get_int(ip, community, get_oid(NTCIP1202.Controller.LocalTime), port),
                 get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.MinimumGreen, sg), port)
             )
-            ttc[sg] = int((epoch + mg) * 10)
+            epoch *= 10
+            ttc[sg] = int(epoch + mg)
 
         elif ttc_type == 'max':
             ptn = await get_int(ip, community, get_oid(NTCIP1202.Coord.Pattern.Status), port)
@@ -211,14 +212,15 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
                 get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.YellowChange, sg), port),
                 get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.RedClear, sg), port)
             )
-            ttc[sg] = int((epoch + split - (y / 10) - (r / 10)) * 10)
+            epoch *= 10
+            ttc[sg] = int(epoch + split - (y / 10) - (r / 10))
 
     return [epoch, ttc]
 
 
 async def get_signal_state(ip, community, int_id, sig_grps):
     sg_states, sg_ttc_min, sg_ttc_max = await asyncio.gather(
-        get_phase_j2735_states_ntcip(ip, community, 10000 + int_id),
+        get_phase_j2735_states_ntcip(ip, community, sig_grps, 10000 + int_id),
         get_phase_j2735_times_ntcip(ip, community, sig_grps, 10000 + int_id, 'min'),
         get_phase_j2735_times_ntcip(ip, community, sig_grps, 10000 + int_id, 'max')
     )
