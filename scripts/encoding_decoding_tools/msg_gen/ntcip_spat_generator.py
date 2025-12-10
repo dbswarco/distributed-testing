@@ -121,7 +121,7 @@ async def send_snmp_set_command(ip, community, oid, value, port):
 
     finally:
         snmp_engine.close_dispatcher()
-        await asyncio.sleep(0.1)
+        #await asyncio.sleep(0.1)
 
 
 async def send_snmp_get_command(ip, community, oid, port):
@@ -156,7 +156,7 @@ async def send_snmp_get_command(ip, community, oid, port):
 
     finally:
         snmp_engine.close_dispatcher()
-        await asyncio.sleep(0.1)
+        #await asyncio.sleep(0.1)
 
 
 async def get_int(ip: str, community: str, oid: str, port: int) -> int:
