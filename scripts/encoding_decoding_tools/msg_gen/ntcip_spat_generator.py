@@ -103,7 +103,7 @@ def clear_phase_timing_cache(ip: str = None, port: int = None, sg: int = None) -
         _phase_timing_locks.pop(key, None)
 
 
-@timed
+#@timed
 async def get_phase_j2735_states_ntcip(ip: str, community: str, sig_grps: list, port: int) -> dict:
 
     def bits_lsb_first(byte_val: int) -> list[int]:
@@ -154,7 +154,7 @@ async def get_phase_j2735_states_ntcip(ip: str, community: str, sig_grps: list, 
     return states
 
 
-@timed
+#@timed
 async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, port: int):
     time_to_change = {}
 
@@ -193,7 +193,7 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
     return [controller_gmt_moy, time_to_change]
 
 
-@timed
+#@timed
 async def get_signal_state(ip, community, int_id, sig_grps, tm):
     sg_states, sg_ttc = await asyncio.gather(
         get_phase_j2735_states_ntcip(ip, community, sig_grps, 10000 + int_id),
@@ -246,7 +246,7 @@ def compute_moy_and_time_mark():
     return moy, int(time_mark)
 
 
-@timed
+#@timed
 async def build_spat_for_intersection(
     intersection_id,
     intersection_ip,
@@ -360,6 +360,107 @@ def load_phase_config(path):
     return intersections
 
 
+# assumes: send_snmp_set_command, build_spat_for_intersection, encode_spat_to_uper_hex,
+# print_frame_log, build_active_message, NTCIP1202, Counter32, compute_moy_and_time_mark
+# are already defined/imported.
+
+# Tune this if you want to cap simultaneous intersections to avoid hammering devices
+MAX_CONCURRENCY = 16  # or len(intersections), or a smaller number like 8
+
+_semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
+
+async def process_intersection(intersection, moy, time_mark, args, sk, target):
+    """
+    Runs the full per-intersection pipeline:
+      - SNMP clock sync
+      - Build SPaT
+      - Encode
+      - Log
+      - UDP send
+    Executes within a concurrency-limiting semaphore.
+    """
+    async with _semaphore:
+        intersection_id = intersection["id"]
+        signal_groups = intersection["signal_groups"]
+        intersection_ip = intersection.get("ip")
+
+        debug_info = {
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
+            "signal_groups": signal_groups,
+        }
+
+        # 1) Sync controller clock (per intersection)
+        current_datetime = int(datetime.now(timezone.utc).timestamp())
+        await send_snmp_set_command(
+            intersection_ip,
+            'administrator',
+            NTCIP1202.Controller.GlobalTime,
+            Counter32(current_datetime),
+            intersection_id + 10000
+        )
+
+        # 2) Build SPaT for intersection (likely does SNMP reads internally)
+        spat_jer = await build_spat_for_intersection(
+            intersection_id,
+            intersection_ip,
+            moy,
+            time_mark,
+            signal_groups
+        )
+        if args.verbose:
+            print(f"spat_jer: {spat_jer}")
+
+        # 3) Encode to UPER hex
+        hex_str = encode_spat_to_uper_hex(spat_jer)
+
+        # 4) Human-readable log
+        print_frame_log(intersection_id, debug_info, hex_str)
+
+        # 5) AMF message build + UDP send
+        amf_text = build_active_message(hex_str)
+
+        # UDP sends are very fast; if you ever see blocking, wrap in run_in_executor:
+        # loop = asyncio.get_running_loop()
+        # await loop.run_in_executor(None, sk.sendto, amf_text.encode("ascii"), target)
+        sk.sendto(amf_text.encode("ascii"), target)
+
+
+async def run_loop(intersections, args, sk, target, interval: float):
+    """
+    Main scheduler loop running at 'interval' seconds. Executes per-intersection work in parallel.
+    """
+    while True:
+        tick_start = time.perf_counter()
+
+        # Compute controller state ONCE per tick
+        moy, time_mark = compute_moy_and_time_mark()
+
+        # Launch all intersections in parallel
+        tasks = [
+            asyncio.create_task(process_intersection(intersection, moy, time_mark, args, sk, target))
+            for intersection in intersections
+        ]
+
+        # Don't let one failure cancel the rest; collect exceptions to handle/log
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Optional: log per-intersection errors
+        for i, res in enumerate(results):
+            if isinstance(res, Exception):
+                try:
+                    intersection_id = intersections[i].get("id")
+                except Exception:
+                    intersection_id = f"idx={i}"
+                print(f"[WARN] Intersection {intersection_id} task failed: {res!r}")
+
+        # Rate control using non-blocking sleep
+        elapsed = time.perf_counter() - tick_start
+        sleep_time = interval - elapsed
+        if sleep_time > 0:
+            await asyncio.sleep(sleep_time)
+        # else: we're running behind; next tick starts immediately
+
+
 async def main():
     parser = argparse.ArgumentParser(
         formatter_class=RawTextHelpFormatter, description=(
@@ -444,51 +545,7 @@ async def main():
     )
 
     try:
-        while True:
-            loop_start = time.time()
-
-            # Compute controller state ONCE per tick
-            moy, time_mark = compute_moy_and_time_mark()
-
-            debug_info = {
-                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
-            }
-
-            # Build, encode, log, and send for each intersection
-            for intersection in intersections:
-                intersection_id = intersection["id"]
-                signal_groups = intersection["signal_groups"]
-                intersection_ip = intersection.get("ip")
-                debug_info["signal_groups"] = signal_groups
-
-                # Sync controller clocks with PC since virtual controllers run slow over time
-                current_datetime = int(datetime.now().timestamp())
-                await send_snmp_set_command(intersection_ip, 'administrator',
-                                            NTCIP1202.Controller.GlobalTime, Counter32(current_datetime),
-                                            intersection_id + 10000)
-
-                spat_jer = await build_spat_for_intersection(
-                    intersection_id,
-                    intersection_ip,
-                    moy,
-                    time_mark,
-                    signal_groups
-                )
-                if args.verbose:
-                    print(f"spat_jer: {spat_jer}")
-                hex_str = encode_spat_to_uper_hex(spat_jer)
-
-                # Human-readable log
-                print_frame_log(intersection_id, debug_info, hex_str)
-
-                # Build AMF text and send via UDP
-                amf_text = build_active_message(hex_str)
-                sk.sendto(amf_text.encode("ascii"), target)
-
-            # Rate control
-            sleep_time = interval - (time.time() - loop_start)
-            if sleep_time > 0:
-                time.sleep(sleep_time)
+        await run_loop(intersections, args, sk, target, interval)
 
     except KeyboardInterrupt:
         print("\nStopped SPaT generator.")
