@@ -71,7 +71,7 @@ async def send_snmp_set_command(ip, community, oid, value, port):
         module_logger.debug(f"send_snmp_set_command: {error_indication}, {error_status}, {error_index}, {var_binds}")
 
         if error_indication:
-            msg = f"{ip}: SNMP GET {oid} transport error: {error_indication}"
+            msg = f"{ip}:{port}: SNMP GET {oid} transport error: {error_indication}"
             module_logger.error(msg)
             raise SnmpGetError(msg)
 
@@ -79,13 +79,13 @@ async def send_snmp_set_command(ip, community, oid, value, port):
             bad_var = (
                 var_binds[int(error_index) - 1][0] if error_index else "unknown"
             )
-            msg = (f"{ip}: SNMP GET {oid} agent error: "
+            msg = (f"{ip}:{port}: SNMP GET {oid} agent error: "
                    f"{error_status.prettyPrint()} at {bad_var}")
             module_logger.error(msg)
             raise SnmpGetError(msg)
 
         value = var_binds[0][1]  # PySNMP type (e.g., Integer, OctetString)
-        module_logger.debug(f"{ip}: SET {oid} {value.prettyPrint()}")
+        module_logger.debug(f"{ip}:{port}: SET {oid} {value.prettyPrint()}")
         return [ip, oid, value]
 
     finally:
@@ -106,7 +106,7 @@ async def send_snmp_get_command(ip, community, oid, port):
         error_indication, error_status, error_index, var_binds = await iterator
 
         if error_indication:
-            msg = f"{ip}: SNMP GET {oid} transport error: {error_indication}"
+            msg = f"{ip}:{port}: SNMP GET {oid} transport error: {error_indication}"
             module_logger.error(msg)
             raise SnmpGetError(msg)
 
@@ -114,13 +114,13 @@ async def send_snmp_get_command(ip, community, oid, port):
             bad_var = (
                 var_binds[int(error_index) - 1][0] if error_index else "unknown"
             )
-            msg = (f"{ip}: SNMP GET {oid} agent error: "
+            msg = (f"{ip}:{port}: SNMP GET {oid} agent error: "
                    f"{error_status.prettyPrint()} at {bad_var}")
             module_logger.error(msg)
             raise SnmpGetError(msg)
 
         value = var_binds[0][1]  # PySNMP type (e.g., Integer, OctetString)
-        module_logger.debug(f"{ip}: GET {oid} -> {value.prettyPrint()}")
+        module_logger.debug(f"{ip}:{port}: GET {oid} -> {value.prettyPrint()}")
         return [ip, oid, value]
 
     finally:
@@ -132,7 +132,7 @@ async def get_int(ip: str, community: str, oid: str, port: int) -> int:
     try:
         res = await send_snmp_get_command(ip, community, oid, port)
         if res is None:
-            msg = f"{ip}: SNMP GET {oid} agent error: no value returned"
+            msg = f"{ip}:{port}: SNMP GET {oid} agent error: no value returned"
             raise SnmpGetError(msg)
         val = res[2]
         # Handle PySNMP types or plain Python types
