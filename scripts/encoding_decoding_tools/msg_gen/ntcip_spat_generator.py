@@ -8,6 +8,9 @@ from argparse import RawTextHelpFormatter
 import asyncio
 import logging
 from datetime import datetime, timezone
+from dataclasses import dataclass
+from typing import Dict, Tuple
+
 
 import j2735_202409
 from ntcip_snmp_utils import NTCIP1202, send_snmp_set_command, get_int, get_oid, Counter32
@@ -16,8 +19,8 @@ MessageFrame = j2735_202409.MessageFrame.MessageFrame
 
 module_logger = logging.getLogger('main.snmp_getsetter')
 
-# function time debugging ---
 
+# function time debugging ---
 import time
 from functools import wraps
 
@@ -32,6 +35,72 @@ def timed(func):
             dt_s = dt_ns / 1_000_000_000
             print(f"{func.__name__} took {dt_s:.6f}s ({dt_ns/1_000_000:.3f} ms)")
     return wrapper
+
+
+@dataclass
+class PhaseTimingCacheEntry:
+    min_grn: int
+    max_grn: int
+    yellow: int
+    red: int
+
+# Keyed by (ip, port, sg)
+_phase_timing_cache: Dict[Tuple[str, int, int], PhaseTimingCacheEntry] = {}
+_phase_timing_locks: Dict[Tuple[str, int, int], asyncio.Lock] = {}
+
+# ----- CACHE HELPERS -----
+
+async def _ensure_phase_timing_cached(ip: str, community: str, port: int, sg: int) -> PhaseTimingCacheEntry:
+    """
+    Fetch and cache min_grn, max_grn, yellow, red for (ip, port, sg) once.
+    Returns a PhaseTimingCacheEntry with raw SNMP integer values.
+    """
+    key = (ip, port, sg)
+    if key in _phase_timing_cache:
+        return _phase_timing_cache[key]
+
+    lock = _phase_timing_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _phase_timing_locks[key] = lock
+
+    async with lock:
+        if key in _phase_timing_cache:
+            return _phase_timing_cache[key]
+
+        min_grn, max_grn, yellow, red = await asyncio.gather(
+            get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.MinimumGreen, sg), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.Maximum1, sg), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.YellowChange, sg), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.RedClear, sg), port),
+        )
+
+        entry = PhaseTimingCacheEntry(
+            min_grn=int(min_grn),
+            max_grn=int(max_grn),
+            yellow=int(yellow),
+            red=int(red),
+        )
+        _phase_timing_cache[key] = entry
+        return entry
+
+
+def clear_phase_timing_cache(ip: str = None, port: int = None, sg: int = None) -> None:
+    """Clear all cache or targeted entries."""
+    if ip is None and port is None and sg is None:
+        _phase_timing_cache.clear()
+        _phase_timing_locks.clear()
+        return
+
+    # Selective clear
+    to_delete = []
+    for key in _phase_timing_cache.keys():
+        kip, kport, ksg = key
+        if (ip is None or ip == kip) and (port is None or port == kport) and (sg is None or sg == ksg):
+            to_delete.append(key)
+    for key in to_delete:
+        _phase_timing_cache.pop(key, None)
+        _phase_timing_locks.pop(key, None)
 
 
 @timed
@@ -88,37 +157,39 @@ async def get_phase_j2735_states_ntcip(ip: str, community: str, sig_grps: list, 
 @timed
 async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, port: int):
     time_to_change = {}
-    controller_gmt_moy = 0
-    # calculate epoch time for January 1 00:00 UTC for current year so it can be subtracted from controller epoch
-    current_year_offset = int(datetime(datetime.now(timezone.utc).year, 1, 1, 0, 0, 0, 
+
+    # Calculate epoch deciseconds for Jan 1, 00:00 UTC of current year
+    current_year_offset = int(datetime(datetime.now(timezone.utc).year, 1, 1, 0, 0, 0,
                                        tzinfo=timezone.utc).timestamp()) * 10
 
     ptn = await get_int(ip, community, get_oid(NTCIP1202.Coord.Pattern.Status), port)
 
-    for sg in sig_grps:
-        if ptn < 254:
-            controller_localtz_epoch, tz_differential, min_grn, split, yellow, red = await asyncio.gather(
-                get_int(ip, community, get_oid(NTCIP1202.Controller.LocalTime), port),
-                get_int(ip, community, get_oid(NTCIP1202.Controller.StandardTimeZone), port),
-                get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.MinimumGreen, sg), port),
-                get_int(ip, community, get_oid(NTCIP1202.Coord.Split.Time, ptn, sg), port),
-                get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.YellowChange, sg), port),
-                get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.RedClear, sg), port)
-            )
-            time_to_change[sg] = {'min': int(min_grn) * 10,
-                                  'max': int(split - (yellow / 10) - (red / 10)) * 10}
-        else:
-            controller_localtz_epoch, tz_differential, min_grn, max_grn = await asyncio.gather(
-                get_int(ip, community, get_oid(NTCIP1202.Controller.LocalTime), port),
-                get_int(ip, community, get_oid(NTCIP1202.Controller.StandardTimeZone), port),
-                get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.MinimumGreen, sg), port),
-                get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.Maximum1, sg), port)
-            )
-            time_to_change[sg] = {'min': int(min_grn) * 10,
-                                  'max': int(max_grn) * 10}
+    controller_localtz_epoch, tz_differential = await asyncio.gather(
+        get_int(ip, community, get_oid(NTCIP1202.Controller.LocalTime), port),
+        get_int(ip, community, get_oid(NTCIP1202.Controller.StandardTimeZone), port),
+    )
 
-        controller_gmt_moy = (controller_localtz_epoch - tz_differential) * 10 - current_year_offset
+    if ptn < 254:
+        split_tasks = [
+            get_int(ip, community, get_oid(NTCIP1202.Coord.Split.Time, ptn, sg), port)
+            for sg in sig_grps
+        ]
+        splits = await asyncio.gather(*split_tasks)
 
+        for sg, split in zip(sig_grps, splits):
+            entry = await _ensure_phase_timing_cached(ip, community, port, sg)
+            min_ds = int(entry.min_grn) * 10
+            # split is in seconds; yellow/red are deciseconds -> convert to seconds before subtraction, then back to ds
+            max_ds = int(split - (entry.yellow / 10) - (entry.red / 10)) * 10
+            time_to_change[sg] = {'min': min_ds, 'max': max_ds}
+    else:
+        for sg in sig_grps:
+            entry = await _ensure_phase_timing_cached(ip, community, port, sg)
+            min_ds = int(entry.min_grn) * 10
+            max_ds = int(entry.max_grn) * 10
+            time_to_change[sg] = {'min': min_ds, 'max': max_ds}
+
+    controller_gmt_moy = (controller_localtz_epoch - tz_differential) * 10 - current_year_offset
     return [controller_gmt_moy, time_to_change]
 
 
