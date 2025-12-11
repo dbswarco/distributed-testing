@@ -88,7 +88,10 @@ async def get_phase_j2735_states_ntcip(ip: str, community: str, sig_grps: list, 
 @timed
 async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, port: int):
     time_to_change = {}
-    controller_gmt_epoch = 0
+    controller_gmt_moy = 0
+    # calculate epoch time for January 1 00:00 UTC for current year so it can be subtracted from controller epoch
+    current_year_offset = int(datetime(datetime.now(timezone.utc).year, 1, 1, 0, 0, 0, 
+                                       tzinfo=timezone.utc).timestamp()) * 10
 
     for sg in sig_grps:
         ptn = await get_int(ip, community, get_oid(NTCIP1202.Coord.Pattern.Status), port)
@@ -100,15 +103,15 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
             get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.YellowChange, sg), port),
             get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.RedClear, sg), port)
         )
-        controller_gmt_epoch = (controller_localtz_epoch - tz_differential) * 10
-        time_to_change[sg] = {'min': int(controller_gmt_epoch + min_grn),
-                              'max': int(controller_gmt_epoch + split - (yellow / 10) - (red / 10))}
+        controller_gmt_moy = (controller_localtz_epoch - tz_differential) * 10 - current_year_offset
+        time_to_change[sg] = {'min': int(min_grn),
+                              'max': int(split - (yellow / 10) - (red / 10))}
 
-    return [controller_gmt_epoch, time_to_change]
+    return [controller_gmt_moy, time_to_change]
 
 
 @timed
-async def get_signal_state(ip, community, int_id, sig_grps):
+async def get_signal_state(ip, community, int_id, sig_grps, tm):
     sg_states, sg_ttc = await asyncio.gather(
         get_phase_j2735_states_ntcip(ip, community, sig_grps, 10000 + int_id),
         get_phase_j2735_times_ntcip(ip, community, sig_grps, 10000 + int_id),
@@ -124,8 +127,8 @@ async def get_signal_state(ip, community, int_id, sig_grps):
                     "eventState": event_state,
                     "timing": {
                         # Both are INTEGER TimeMark values
-                        "minEndTime": sg_ttc[1].get(sg).get('min'),
-                        "maxEndTime": sg_ttc[1].get(sg).get('max'),
+                        "minEndTime": sg_ttc[1].get(sg).get('min') + tm,
+                        "maxEndTime": sg_ttc[1].get(sg).get('max') + tm,
                     },
                 }
             ],
@@ -136,6 +139,7 @@ async def get_signal_state(ip, community, int_id, sig_grps):
 
 
 def compute_moy_and_time_mark():
+    # TODO: Ideally this should be computed based on the controller's moy from get_phase_j2735_times_ntcip, but
     """
     Compute:
       - Minute of year (moy)
@@ -164,28 +168,26 @@ async def build_spat_for_intersection(
     intersection_id,
     intersection_ip,
     moy,
+    time_mark,
     signal_groups
 ):
     """
     Build a SPaT JER dict for a single intersection, given existing timing/state info.
     """
 
-    states = await get_signal_state(intersection_ip, 'public', intersection_id, signal_groups)
-
-    ### this gets time from the local clock, if you want to get time from the controller, 
-    #   you will need to change the time stamps here to get from NTCIP 
+    states = await get_signal_state(intersection_ip, 'public', intersection_id, signal_groups, time_mark)
 
     spat = {
         "messageId": 19,
         "value": {
-            "timeStamp": states[0],  # DSecond-ish; still 0.1s from hour, but valid INTEGER
+            "timeStamp": time_mark,  # DSecond-ish; still 0.1s from hour, but valid INTEGER
             "intersections": [
                 {
                     "id": {"id": int(intersection_id)},
                     "revision": 0,
                     "status": "0000",
                     "moy": int(moy),
-                    "timeStamp": states[0],
+                    "timeStamp": time_mark,
                     "states": states[1],
                 }
             ],
@@ -359,15 +361,6 @@ async def main():
     )
 
     try:
-        # Sync controller clocks with PC since virtual controllers run slow over time
-        for intersection in intersections:
-            intersection_id = intersection["id"]
-            intersection_ip = intersection.get("ip")
-            current_datetime = int(datetime.now().timestamp())
-            await send_snmp_set_command(intersection_ip, 'administrator',
-                                              NTCIP1202.Controller.GlobalTime, Counter32(current_datetime),
-                                              intersection_id + 10000)
-
         while True:
             loop_start = time.time()
 
@@ -385,10 +378,17 @@ async def main():
                 intersection_ip = intersection.get("ip")
                 debug_info["signal_groups"] = signal_groups
 
+                # Sync controller clocks with PC since virtual controllers run slow over time
+                current_datetime = int(datetime.now().timestamp())
+                await send_snmp_set_command(intersection_ip, 'administrator',
+                                            NTCIP1202.Controller.GlobalTime, Counter32(current_datetime),
+                                            intersection_id + 10000)
+
                 spat_jer = await build_spat_for_intersection(
                     intersection_id,
                     intersection_ip,
                     moy,
+                    time_mark,
                     signal_groups
                 )
                 if args.verbose:
