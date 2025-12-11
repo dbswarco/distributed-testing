@@ -93,8 +93,9 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
     current_year_offset = int(datetime(datetime.now(timezone.utc).year, 1, 1, 0, 0, 0, 
                                        tzinfo=timezone.utc).timestamp()) * 10
 
+    ptn = await get_int(ip, community, get_oid(NTCIP1202.Coord.Pattern.Status), port)
+
     for sg in sig_grps:
-        ptn = await get_int(ip, community, get_oid(NTCIP1202.Coord.Pattern.Status), port)
         if ptn < 254:
             controller_localtz_epoch, tz_differential, min_grn, split, yellow, red = await asyncio.gather(
                 get_int(ip, community, get_oid(NTCIP1202.Controller.LocalTime), port),
@@ -111,7 +112,7 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
                 get_int(ip, community, get_oid(NTCIP1202.Controller.LocalTime), port),
                 get_int(ip, community, get_oid(NTCIP1202.Controller.StandardTimeZone), port),
                 get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.MinimumGreen, sg), port),
-                get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.Maximum1, ptn, sg), port)
+                get_int(ip, community, get_oid(NTCIP1202.Phase.Timing.Maximum1, sg), port)
             )
             time_to_change[sg] = {'min': int(min_grn) * 10,
                                   'max': int(max_grn) * 10}
