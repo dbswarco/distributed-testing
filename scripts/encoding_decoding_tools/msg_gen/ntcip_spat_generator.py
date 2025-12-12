@@ -470,13 +470,13 @@ async def main():
                                                 intersection_id + 10000)
                     controller_time_synced = True
 
-                    spat_jer = await build_spat_for_intersection(
-                        intersection_id,
-                        intersection_ip,
-                        moy,
-                        time_mark,
-                        signal_groups
-                    )
+                spat_jer = await build_spat_for_intersection(
+                    intersection_id,
+                    intersection_ip,
+                    moy,
+                    time_mark,
+                    signal_groups
+                )
 
                 if args.verbose:
                     print(f"spat_jer: {spat_jer}")
