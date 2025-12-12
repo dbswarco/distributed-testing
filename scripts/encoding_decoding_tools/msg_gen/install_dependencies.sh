@@ -8,7 +8,7 @@ dependencies="python3 \
     python3-pip"
 
 # Required python packages
-python_packages="pycrate"
+python_packages="pycrate pysnmp"
 
 # Install dependencies, packages
 sudo apt-get install -y $dependencies
