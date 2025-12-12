@@ -444,7 +444,7 @@ async def main():
     )
 
     try:
-        last_snmp_sync = 0
+        controller_time_synced = False
         while True:
             loop_start = time.time()
 
@@ -462,13 +462,13 @@ async def main():
                 intersection_ip = intersection.get("ip")
                 debug_info["signal_groups"] = signal_groups
 
-                if last_snmp_sync == 0 or loop_start - last_snmp_sync > 1:
-                    last_snmp_sync = loop_start
+                if not controller_time_synced:
                     # Sync controller clocks with PC since virtual controllers run slow over time
                     current_datetime = int(datetime.now().timestamp())
                     await send_snmp_set_command(intersection_ip, 'administrator',
                                                 NTCIP1202.Controller.GlobalTime, Counter32(current_datetime),
                                                 intersection_id + 10000)
+                    controller_time_synced = True
 
                     spat_jer = await build_spat_for_intersection(
                         intersection_id,
