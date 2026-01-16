@@ -182,16 +182,21 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
             # split is in seconds; yellow/red are deciseconds -> convert to seconds before subtraction, then back to ds
             max_ds = int(split - (entry.yellow / 10) - (entry.red / 10)) * 10
             time_to_change[sg] = {'min': min_ds, 'max': max_ds}
-            if time_to_change.get(sg) > 35999:
-                time_to_change[sg] -= 36000
+
     else:
         for sg in sig_grps:
             entry = await _ensure_phase_timing_cached(ip, community, port, sg)
             min_ds = int(entry.min_grn) * 10
             max_ds = int(entry.max_grn) * 10
             time_to_change[sg] = {'min': min_ds, 'max': max_ds}
-            if time_to_change.get(sg) > 35999:
-                time_to_change[sg] -= 36000
+
+    if time_to_change[sg]['min'] > 35999:
+        print(f'min time_to_change for sg {sg} goes over the hour ({time_to_change[sg]['min']}), subtracting 36000')
+        time_to_change[sg]['min'] -= 36000
+    
+    if time_to_change[sg]['max'] > 35999:
+        print(f'min time_to_change for sg {sg} goes over the hour ({time_to_change[sg]['max']}), subtracting 36000')
+        time_to_change[sg]['max'] -= 36000
 
     controller_gmt_moy = (controller_localtz_epoch - tz_differential) * 10 - current_year_offset
     return [controller_gmt_moy, time_to_change]
