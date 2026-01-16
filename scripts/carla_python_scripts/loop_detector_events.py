@@ -66,10 +66,10 @@ async def set_object_int(engine, transport, community, version, OID, val, printv
     if errorIndication:
         print(f"Error: {errorIndication}")
     elif errorStatus:
-        print(f"Error Status: {errorStatus.prettyPrint()} at {errorIndex}")
+        print(f"Error Status: {str(errorStatus)} at {errorIndex}")
     elif printval:
-        for name, val in varBinds:
-            print(f"{name.prettyPrint()} = {val.prettyPrint()}")
+        for name, value in varBinds:
+            print(f"{str(name)} = {str(value)}")
 
 async def set_backup_time(engine, transport):
     await set_object_int(engine, transport, 'administrator', 0, NTCIP1202.Unit.BackupTime,
@@ -187,7 +187,6 @@ async def main():
     except KeyboardInterrupt:
         print("\nShutting down loop detector event watcher.")
     finally:
-        await transport.close()
         pass
 
 
