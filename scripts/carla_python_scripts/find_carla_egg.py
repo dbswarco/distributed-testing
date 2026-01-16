@@ -16,7 +16,7 @@ def find_file(pattern, path):
 
 def find_carla_egg():
 
-    carla_egg_dir = os.getenv("VUG_CARLA_EGG_DIR")
+    carla_egg_dir = r'C:\Users\dbswarco\Desktop\Windows_Delave_CARLA_9-15-2_v2\Carla-windows\WindowsNoEditor\PythonAPI\carla\dist'
 
     if not carla_egg_dir:
         print("\n[!!!] VUG_CARLA_EGG_DIR not set, source node_info.config")

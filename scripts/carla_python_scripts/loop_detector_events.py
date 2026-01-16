@@ -10,40 +10,13 @@ from pysnmp.hlapi.v3arch.asyncio import (
     ContextData, ObjectType, ObjectIdentity
 )
 
-from find_carla_egg import find_carla_egg
+# from find_carla_egg import find_carla_egg
 
-carla_egg_file = find_carla_egg()
+# carla_egg_file = find_carla_egg()
 
-sys.path.append(carla_egg_file)
+# sys.path.append(carla_egg_file)
 
 import carla
-
-
-argparser = argparse.ArgumentParser(
-    description=__doc__)
-argparser.add_argument(
-    '--host',
-    metavar='H',
-    default='127.0.0.1',
-    help='IP of the host server (default: 127.0.0.1)')
-argparser.add_argument(
-    '-p', '--port',
-    metavar='P',
-    default=2000,
-    type=int,
-    help='TCP port to listen to (default: 2000)')
-argparser.add_argument(
-    '-C', '--controller',
-    metavar='C',
-    default='127.0.0.1',
-    help='IP of the target traffic signal controller (default: 127.0.0.1)')
-argparser.add_argument(
-    '-S', '--snmp-port',
-    metavar='P',
-    default=161,
-    type=int,
-    help='UDP port for SNMP traffic to the target traffic signal controller (default: 161)')
-args = argparser.parse_args()
 
 LOOP_DETECTORS = {
     "LD_1_1": {
@@ -72,6 +45,16 @@ class McCain:
         Vehicle = '1.3.6.1.4.1.1206.3.21.2.13.4.1.1'
         Pedestrian = '1.3.6.1.4.1.1206.3.21.2.14.4.1.1'
 
+async def snmp_connect(host, port):
+    try:
+        engine = SnmpEngine()
+        transport = await UdpTransportTarget.create((host, port))
+        return engine, transport
+    except Exception as e:
+        print(f"Fatal error in omni {host}:{port}: {e}")
+        while True:
+            await asyncio.sleep(10)  # Prevent container from exiting
+
 async def set_object_int(engine, transport, community, version, OID, val, printval=False):
     errorIndication, errorStatus, errorIndex, varBinds = await set_cmd(
         engine,
@@ -88,19 +71,9 @@ async def set_object_int(engine, transport, community, version, OID, val, printv
         for name, val in varBinds:
             print(f"{name.prettyPrint()} = {val.prettyPrint()}")
 
-async def snmp_connect(host, port):
-    try:
-        engine = SnmpEngine()
-        transport = await UdpTransportTarget.create((host, port))
-        return engine, transport
-    except Exception as e:
-        print(f"Fatal error in omni {host}:{port}: {e}")
-        while True:
-            await asyncio.sleep(10)  # Prevent container from exiting
-
 async def set_backup_time(engine, transport):
     await set_object_int(engine, transport, 'administrator', 0, NTCIP1202.Unit.BackupTime,
-                         100)  # ensure backup time is set, not too high, not too low
+                         100, True)  # ensure backup time is set, not too high, not too low
 
 def point_in_detector(location, bbox):
     """Evaluates if a point is within a loop detector"""
@@ -151,7 +124,7 @@ async def update_loop_detectors(world, detectors, engine, transport):
         if det["state"] != det["prev_state"]:
             on_state_change(det_id, det)
             task = set_object_int(engine, transport, 'administrator', 0,
-                                  McCain.DetectorControlState.Vehicle + '.' + det,
+                                  McCain.DetectorControlState.Vehicle + '.' + str(det["phase_id"]),
                                   int(det["state"]), True)
             tasks.append(task)
 
@@ -164,28 +137,59 @@ async def update_loop_detectors(world, detectors, engine, transport):
                 await asyncio.sleep(10)  # Prevent container from exiting
 
 
-# main:
-try:
+async def main():
+    argparser = argparse.ArgumentParser(description="CARLA loop detector SNMP updater")
+    argparser.add_argument('--host', 
+                           default='127.0.0.1', 
+                           help='CARLA host (default: 127.0.0.1)')
+    argparser.add_argument('-p', 
+                           '--port', 
+                           default=2000, 
+                           type=int, 
+                           help='CARLA port (default: 2000)')
+    argparser.add_argument('-C', 
+                           '--controller', 
+                           default='10.1.110.183', 
+                           help='Controller IP')
+    argparser.add_argument('-S', 
+                           '--snmp-port', 
+                           default=10001, 
+                           type=int, 
+                           help='Controller SNMP UDP port')
+    args = argparser.parse_args()
+
+    # # Windows: use selector-based loop
+    # if sys.platform.startswith("win"):
+    #     try:
+    #         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    #     except Exception:
+    #         pass
+
     client = carla.Client(args.host, args.port)
     client.set_timeout(5.0)
     world = client.get_world()
     dbg = world.debug
 
-    snmp_eng, snmp_trans = snmp_connect(host, port)
-    set_backup_time(snmp_eng, snmp_trans)
+    engine, transport = await snmp_connect(args.controller, args.snmp_port)
+
+    # Prepare controller
+    await set_backup_time(engine, transport)
 
     draw_loop_detectors(dbg, LOOP_DETECTORS)
-
-    print("Loop detector event watcher running...")
+    print("Loop detector event watcher running... (Ctrl+C to stop)")
 
     try:
         while True:
-            update_loop_detectors(world,LOOP_DETECTORS, snmp_eng, snmp_trans)
-
-            time.sleep(0.1)
+            await update_loop_detectors(world, LOOP_DETECTORS, engine, transport)
+            await asyncio.sleep(0.1)
+    except asyncio.CancelledError:
+        pass
     except KeyboardInterrupt:
         print("\nShutting down loop detector event watcher.")
-except Exception as e:
-    print(f"\nError occurred while checking detectors: {e}")
-finally:
-    print('\nDone!')
+    finally:
+        await transport.close()
+        pass
+
+
+if __name__ == '__main__':
+    asyncio.run(main())
