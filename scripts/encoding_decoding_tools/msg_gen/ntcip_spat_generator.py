@@ -85,7 +85,7 @@ async def _ensure_phase_timing_cached(ip: str, community: str, port: int, sg: in
         return entry
 
 
-def clear_phase_timing_cache(ip: str = None, port: int = None, sg: int = None) -> None:
+def clear_phase_timing_cache(ip: str, port: int, sg: int) -> None:
     """Clear all cache or targeted entries."""
     if ip is None and port is None and sg is None:
         _phase_timing_cache.clear()
@@ -191,11 +191,11 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
             time_to_change[sg] = {'min': min_ds, 'max': max_ds}
 
     if time_to_change[sg]['min'] > 35999:
-        print(f'min time_to_change for sg {sg} goes over the hour ({time_to_change[sg]['min']}), subtracting 36000')
+        print(f"min time_to_change for sg {sg} goes over the hour ({time_to_change[sg]['min']}), subtracting 36000")
         time_to_change[sg]['min'] -= 36000
     
     if time_to_change[sg]['max'] > 35999:
-        print(f'min time_to_change for sg {sg} goes over the hour ({time_to_change[sg]['max']}), subtracting 36000')
+        print(f"min time_to_change for sg {sg} goes over the hour ({time_to_change[sg]['max']}), subtracting 36000")
         time_to_change[sg]['max'] -= 36000
 
     controller_gmt_moy = (controller_localtz_epoch - tz_differential) * 10 - current_year_offset
