@@ -430,27 +430,30 @@ async def set_backup_time(engine, transport):
 
 def point_in_detector(location, bbox):
     """Evaluates if a point is within a loop detector"""
-    return (
-        bbox["min"].x <= location.x <= bbox["max"].x and
-        bbox["min"].y <= location.y <= bbox["max"].y
-        #bbox["min"].z <= location.z <= bbox["max"].z
-    )
+    def cross(a, b, p):
+        # vector AB x AP
+        return (b.x - a.x)*(p.y - a.y) - (b.y - a.y)*(p.x - a.x)
+    
+    signs = []
+    for i in range(len(bbox)):
+        a = bbox[i]
+        b = bbox[(i + 1) % len(bbox)]
+        signs.append(cross(a, b, location))
+
+    all_positive = all(s > 0 for s in signs)
+    all_negative = all(s < 0 for s in signs)
+
+    return all_positive or all_negative
 
 def draw_loop_detectors(dbg, detectors, life_time=0.0):
     """Draw loop detector bounding boxes"""
     for det in detectors.values():
         bbox = det["bbox"]
 
-        center = (bbox["min"] + bbox["max"]) * 0.5
-        extent = (bbox["max"] - bbox["min"]) * 0.5
-
-        dbg.draw_box(
-            box=carla.BoundingBox(center, extent),
-            rotation=carla.Rotation(),
-            thickness=0.1,
-            color=carla.Color(0, 255, 0),
-            life_time=life_time
-        )
+        for i in range (len(bbox)):
+            start = bbox[i]
+            end = bbox[(i+1) % len(bbox)]
+            dbg.draw_line(start, end, life_time=life_time, thickness=0.1, color=carla.Color(0,255,0))
 
 def on_state_change(detector_id, detector):
     """Dummy callback for something happening once the state has changed"""
@@ -463,7 +466,7 @@ async def update_loop_detectors(world, detectors, engine, transport, intersectio
     vehicles = world.get_actors().filter("vehicle.*")
     tasks = []
     for det_id, det in detectors.items():
-        if det["intersection_id"] == intersection_id:
+        if int(det["intersection_id"]) == int(intersection_id):
             det["prev_state"] = det["state"]
             det["state"] = False
 
@@ -513,6 +516,9 @@ async def main():
     argparser.add_argument('-I',
                            '--intersection-id',
                            type=int)
+    argparser.add_argument('-d', '--display',
+                           action='store_true',
+                           help='Indicates that the program should draw the detector loops into CARLA')
     args = argparser.parse_args()
 
     # # Windows: use selector-based loop
@@ -532,16 +538,17 @@ async def main():
     # Prepare controller
     await set_backup_time(engine, transport)
 
-    draw_loop_detectors(dbg, LOOP_DETECTORS)
     print("Loop detector event watcher running... (Ctrl+C to stop)")
 
     if args.intersection_id is None:
-        int_id = int(str(args.intersection_id).rstrip("0"))
+        int_id = str(int(args.snmp_port) - 10000)
     else:
-        int_id = args.intersection_id
+        int_id = str(args.intersection_id)
 
     try:
         while True:
+            if args.display:
+                draw_loop_detectors(dbg, LOOP_DETECTORS, 0.2)
             await update_loop_detectors(world, LOOP_DETECTORS, engine, transport, int_id)
             await asyncio.sleep(0.1)
     except asyncio.CancelledError:
