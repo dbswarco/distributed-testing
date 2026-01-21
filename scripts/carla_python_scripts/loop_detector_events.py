@@ -10,11 +10,11 @@ from pysnmp.hlapi.v3arch.asyncio import (
     ContextData, ObjectType, ObjectIdentity
 )
 
-# from find_carla_egg import find_carla_egg
+from find_carla_egg import find_carla_egg
 
-# carla_egg_file = find_carla_egg()
+carla_egg_file = find_carla_egg()
 
-# sys.path.append(carla_egg_file)
+sys.path.append(carla_egg_file)
 
 import carla
 
