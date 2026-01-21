@@ -22,7 +22,7 @@ LOOP_DETECTORS = {
     "LD_1_2_STOP": {
         "intersection_id": 1,
         "signal_id": 102,
-        "phase_id": 2,
+        "controller_det_id": 2,
         "bbox": [
             carla.Location(x=-634.81, y=769.45, z=0.2),
             carla.Location(x=-634.81, y=776.45, z=0.2),
@@ -35,7 +35,7 @@ LOOP_DETECTORS = {
     "LD_1_2_ADV": {
         "intersection_id": 1,
         "signal_id": 102,
-        "phase_id": 2,
+        "controller_det_id": 22,
         "bbox": [
             carla.Location(x=-661.51, y=760.45, z=0.2),
             carla.Location(x=-664.01, y=767.05, z=0.2),
@@ -48,7 +48,7 @@ LOOP_DETECTORS = {
     "LD_1_4": {
         "intersection_id": 1,
         "signal_id": 101,
-        "phase_id": 4,
+        "controller_det_id": 4,
         "bbox": [
             carla.Location(x=-620.61, y=758.55, z=0.2),
             carla.Location(x=-624.21, y=760.15, z=0.2),
@@ -61,7 +61,7 @@ LOOP_DETECTORS = {
     "LD_1_3": {
         "intersection_id": 1,
         "signal_id": 100,
-        "phase_id": 3,
+        "controller_det_id": 3,
         "bbox": [
             carla.Location(x=-623.50, y=782.44, z=0.2),
             carla.Location(x=-620.99, y=782.44, z=0.2),
@@ -74,7 +74,7 @@ LOOP_DETECTORS = {
     "LD_2_2_STOP": {
         "intersection_id": 2,
         "signal_id": 201,
-        "phase_id": 2,
+        "controller_det_id": 2,
         "bbox": [
             carla.Location(x=-488.36, y=766.16, z=0.2),
             carla.Location(x=-488.36, y=773.15, z=0.2),
@@ -87,7 +87,7 @@ LOOP_DETECTORS = {
     "LD_2_2_ADV": {
         "intersection_id": 2,
         "signal_id": 201,
-        "phase_id": 2,
+        "controller_det_id": 22,
         "bbox": [
             carla.Location(x=-515.66, y=766.56, z=0.2),
             carla.Location(x=-515.66, y=773.65, z=0.2),
@@ -100,7 +100,7 @@ LOOP_DETECTORS = {
     "LD_2_8": {
         "intersection_id": 2,
         "signal_id": 202,
-        "phase_id": 8,
+        "controller_det_id": 8,
         "bbox": [
             carla.Location(x=-477.59, y=757.05, z=0.2),
             carla.Location(x=-483.29, y=757.65, z=0.2),
@@ -113,7 +113,7 @@ LOOP_DETECTORS = {
     "LD_2_4": {
         "intersection_id": 2,
         "signal_id": 200,
-        "phase_id": 4,
+        "controller_det_id": 4,
         "bbox": [
             carla.Location(x=-477.79, y=781.05, z=0.2),
             carla.Location(x=-471.59, y=780.85, z=0.2),
@@ -126,7 +126,7 @@ LOOP_DETECTORS = {
     "LD_3_2_STOP": {
         "intersection_id": 3,
         "signal_id": 300,
-        "phase_id": 2,
+        "controller_det_id": 2,
         "bbox": [
             carla.Location(x=-382.39, y=754.75, z=0.2),
             carla.Location(x=-381.59, y=761.95, z=0.2),
@@ -139,7 +139,7 @@ LOOP_DETECTORS = {
     "LD_3_2_ADV": {
         "intersection_id": 3,
         "signal_id": 300,
-        "phase_id": 2,
+        "controller_det_id": 22,
         "bbox": [
             carla.Location(x=-412.49, y=757.95, z=0.2),
             carla.Location(x=-411.79, y=764.95, z=0.2),
@@ -152,7 +152,7 @@ LOOP_DETECTORS = {
     "LD_4_2_STOP": {
         "intersection_id": 4,
         "signal_id": 400,
-        "phase_id": 2,
+        "controller_det_id": 2,
         "bbox": [
             carla.Location(x=-134.61, y=729.86, z=0.2),
             carla.Location(x=-134.00, y=736.83, z=0.2),
@@ -165,7 +165,7 @@ LOOP_DETECTORS = {
     "LD_4_2_ADV": {
         "intersection_id": 4,
         "signal_id": 400,
-        "phase_id": 2,
+        "controller_det_id": 22,
         "bbox": [
             carla.Location(x=-164.11, y=732.56, z=0.2),
             carla.Location(x=-163.50, y=739.53, z=0.2),
@@ -178,7 +178,7 @@ LOOP_DETECTORS = {
     "LD_4_8": {
         "intersection_id": 4,
         "signal_id": 401,
-        "phase_id": 8,
+        "controller_det_id": 8,
         "bbox": [
             carla.Location(x=-122.40, y=720.83, z=0.2),
             carla.Location(x=-128.40, y=720.83, z=0.2),
@@ -191,7 +191,7 @@ LOOP_DETECTORS = {
     "LD_4_4": {
         "intersection_id": 4,
         "signal_id": 402,
-        "phase_id": 4,
+        "controller_det_id": 4,
         "bbox": [
             carla.Location(x=-119.70, y=746.63, z=0.2),
             carla.Location(x=-125.70, y=746.63, z=0.2),
@@ -204,7 +204,7 @@ LOOP_DETECTORS = {
     "LD_5_2_STOP": {
         "intersection_id": 5,
         "signal_id": 500,
-        "phase_id": 2,
+        "controller_det_id": 2,
         "bbox": [
             carla.Location(x=52.30, y=710.11, z=0.2),
             carla.Location(x=52.91, y=717.08, z=0.2),
@@ -217,7 +217,7 @@ LOOP_DETECTORS = {
     "LD_5_2_ADV": {
         "intersection_id": 5,
         "signal_id": 500,
-        "phase_id": 2,
+        "controller_det_id": 22,
         "bbox": [
             carla.Location(x=20.40, y=713.31, z=0.2),
             carla.Location(x=21.01, y=720.28, z=0.2),
@@ -230,7 +230,7 @@ LOOP_DETECTORS = {
     "LD_5_8": {
         "intersection_id": 5,
         "signal_id": 502,
-        "phase_id": 8,
+        "controller_det_id": 8,
         "bbox": [
             carla.Location(x=58.17, y=700.04, z=0.2),
             carla.Location(x=61.66, y=699.74, z=0.2),
@@ -243,7 +243,7 @@ LOOP_DETECTORS = {
     "LD_5_4": {
         "intersection_id": 5,
         "signal_id": 501,
-        "phase_id": 4,
+        "controller_det_id": 4,
         "bbox": [
             carla.Location(x=64.02, y=723.26, z=0.2),
             carla.Location(x=68.01, y=722.91, z=0.2),
@@ -256,7 +256,7 @@ LOOP_DETECTORS = {
     "LD_6_2_STOP": {
         "intersection_id": 6,
         "signal_id": 600,
-        "phase_id": 2,
+        "controller_det_id": 2,
         "bbox": [
             carla.Location(x=232.18, y=704.88, z=0.2),
             carla.Location(x=229.46, y=715.03, z=0.2),
@@ -269,7 +269,7 @@ LOOP_DETECTORS = {
     "LD_6_2_ADV": {
         "intersection_id": 6,
         "signal_id": 600,
-        "phase_id": 2,
+        "controller_det_id": 22,
         "bbox": [
             carla.Location(x=190.15, y=697.30, z=0.2),
             carla.Location(x=190.15, y=705.30, z=0.2),
@@ -282,7 +282,7 @@ LOOP_DETECTORS = {
     "LD_6_8": {
         "intersection_id": 6,
         "signal_id": 601,
-        "phase_id": 8,
+        "controller_det_id": 8,
         "bbox": [
             carla.Location(x=242.33, y=683.61, z=0.2),
             carla.Location(x=235.44, y=684.83, z=0.2),
@@ -295,7 +295,7 @@ LOOP_DETECTORS = {
     "LD_6_4": {
         "intersection_id": 6,
         "signal_id": 602,
-        "phase_id": 4,
+        "controller_det_id": 4,
         "bbox": [
             carla.Location(x=253.45, y=726.17, z=0.2),
             carla.Location(x=249.52, y=726.87, z=0.2),
@@ -308,7 +308,7 @@ LOOP_DETECTORS = {
     "LD_7_2_STOP": {
         "intersection_id": 7,
         "signal_id": 700,
-        "phase_id": 2,
+        "controller_det_id": 2,
         "bbox": [
             carla.Location(x=358.99, y=717.17, z=0.2),
             carla.Location(x=359.69, y=723.97, z=0.2),
@@ -321,7 +321,7 @@ LOOP_DETECTORS = {
     "LD_7_2_ADV": {
         "intersection_id": 7,
         "signal_id": 700,
-        "phase_id": 2,
+        "controller_det_id": 22,
         "bbox": [
             carla.Location(x=329.09, y=720.07, z=0.2),
             carla.Location(x=329.59, y=726.77, z=0.2),
@@ -334,7 +334,7 @@ LOOP_DETECTORS = {
     "LD_8_2_STOP": {
         "intersection_id": 8,
         "signal_id": 900,
-        "phase_id": 2,
+        "controller_det_id": 2,
         "bbox": [
             carla.Location(x=531.69, y=838.79, z=0.2),
             carla.Location(x=532.91, y=845.68, z=0.2),
@@ -347,7 +347,7 @@ LOOP_DETECTORS = {
     "LD_8_2_ADV": {
         "intersection_id": 8,
         "signal_id": 900,
-        "phase_id": 2,
+        "controller_det_id": 22,
         "bbox": [
             carla.Location(x=493.33, y=830.20, z=0.2),
             carla.Location(x=487.20, y=835.35, z=0.2),
@@ -360,7 +360,7 @@ LOOP_DETECTORS = {
     "LD_8_3": {
         "intersection_id": 8,
         "signal_id": 901,
-        "phase_id": 3,
+        "controller_det_id": 3,
         "bbox": [
             carla.Location(x=538.60, y=829.93, z=0.2),
             carla.Location(x=534.61, y=830.28, z=0.2),
@@ -373,7 +373,7 @@ LOOP_DETECTORS = {
     "LD_8_4": {
         "intersection_id": 8,
         "signal_id": 902,
-        "phase_id": 4,
+        "controller_det_id": 4,
         "bbox": [
             carla.Location(x=547.47, y=851.82, z=0.2),
             carla.Location(x=544.09, y=852.73, z=0.2),
@@ -481,7 +481,7 @@ async def update_loop_detectors(world, detectors, engine, transport, intersectio
             if det["state"] != det["prev_state"]:
                 on_state_change(det_id, det)
                 task = set_object_int(engine, transport, 'administrator', 0,
-                                    McCain.DetectorControlState.Vehicle + '.' + str(det["phase_id"]),
+                                    McCain.DetectorControlState.Vehicle + '.' + str(det["controller_det_id"]),
                                     int(det["state"]), True)
                 tasks.append(task)
 
