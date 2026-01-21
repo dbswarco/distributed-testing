@@ -510,7 +510,7 @@ async def main():
                            default=10001, 
                            type=int, 
                            help='Controller SNMP UDP port')
-    argparser.add_argument(-'I',
+    argparser.add_argument('-I',
                            '--intersection-id',
                            type=int)
     args = argparser.parse_args()
