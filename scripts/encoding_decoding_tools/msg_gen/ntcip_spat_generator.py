@@ -243,7 +243,9 @@ def compute_moy_and_time_mark():
         # Should not normally happen, but be safe
         time_mark = 35999
 
-    return moy, int(time_mark)
+    ms_since_min = now.second * 1000 + (now.microsecond // 1000)
+
+    return moy, int(time_mark), int(ms_since_min)
 
 
 @timed
@@ -252,6 +254,7 @@ async def build_spat_for_intersection(
     intersection_ip,
     moy,
     time_mark,
+    ms_since_min,
     signal_groups
 ):
     """
@@ -263,14 +266,14 @@ async def build_spat_for_intersection(
     spat = {
         "messageId": 19,
         "value": {
-            "timeStamp": time_mark,  # DSecond-ish; still 0.1s from hour, but valid INTEGER
+            "timeStamp": moy,  # DSecond-ish; still 0.1s from hour, but valid INTEGER
             "intersections": [
                 {
                     "id": {"id": int(intersection_id)},
                     "revision": 0,
                     "status": "0000",
                     "moy": int(moy),
-                    "timeStamp": time_mark,
+                    "timeStamp": ms_since_min,
                     "states": states[1],
                 }
             ],
@@ -449,7 +452,7 @@ async def main():
             loop_start = time.time()
 
             # Compute controller state ONCE per tick
-            moy, time_mark = compute_moy_and_time_mark()
+            moy, time_mark, ms_since_min = compute_moy_and_time_mark()
 
             debug_info = {
                 "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
@@ -475,6 +478,7 @@ async def main():
                     intersection_ip,
                     moy,
                     time_mark,
+                    ms_since_min,
                     signal_groups
                 )
 
