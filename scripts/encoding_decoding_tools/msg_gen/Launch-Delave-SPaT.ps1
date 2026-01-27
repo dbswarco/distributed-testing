@@ -3,7 +3,7 @@
 $workDir  = (Get-Location).Path
 $activate = Join-Path $workDir ".venv\bin\Activate.ps1"   # <-- your specified path
 $script   = Join-Path $workDir "ntcip_spat_generator.py"
-$ip       = "127.0.0.1"
+$ip       = "172.29.99.126"
 
 # Launch one new PowerShell window per JSON
 Get-ChildItem -Path $workDir -Filter *.json | ForEach-Object {
