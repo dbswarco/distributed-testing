@@ -87,7 +87,7 @@ async def _ensure_phase_timing_cached(ip: str, community: str, port: int, sg: in
         return entry
 
 
-def clear_phase_timing_cache(ip: str, port: int, sg: int) -> None:
+def clear_phase_timing_cache(ip: str = None, port: int = None, sg: int = None) -> None:
     """Clear all cache or targeted entries."""
     if ip is None and port is None and sg is None:
         _phase_timing_cache.clear()
@@ -297,17 +297,17 @@ async def get_signal_state(ip, community, int_id, sig_grps, state_store, tm):
     sg_states = await get_phase_j2735_states_ntcip(ip, community, sig_grps, 10000 + int_id, state_store)
 
     states = []
-    for sg, event_state in sg_states.items():
+    for sg, sg_state in sg_states.items():
         states.append(
             {
             "signalGroup": sg,
             "state-time-speed": [
                 {
-                    "eventState": event_state["state"],
+                    "eventState": sg_state.get('state'),
                     "timing": {
                         # Both are INTEGER TimeMark values
-                        "minEndTime": sg_states.get(sg).get('min_ttc') + tm,
-                        "maxEndTime": sg_states.get(sg).get('max_ttc') + tm
+                        "minEndTime": sg_state.get('min_ttc') + tm,
+                        "maxEndTime": sg_state.get('max_ttc') + tm,
                     },
                 }
             ],
@@ -337,10 +337,11 @@ def compute_moy_and_time_mark():
     time_mark = ms_since_hour // 100
     if time_mark > 35999:
         # Should not normally happen, but be safe
-        print(f"WARNING: Time mark out of range in compute_moy_and_time_mark(): {time_mark}")
         time_mark = 35999
 
-    return moy, time_mark
+    ms_since_min = now.second * 1000 + (now.microsecond // 1000)
+
+    return moy, int(time_mark), int(ms_since_min)
 
 
 @timed
@@ -349,6 +350,7 @@ async def build_spat_for_intersection(
     intersection_ip,
     moy,
     time_mark,
+    ms_since_min,
     signal_groups,
     state_store
 ):
@@ -361,14 +363,14 @@ async def build_spat_for_intersection(
     spat = {
         "messageId": 19,
         "value": {
-            "timeStamp": time_mark,  # DSecond-ish; still 0.1s from hour, but valid INTEGER
+            "timeStamp": moy,  # DSecond-ish; still 0.1s from hour, but valid INTEGER
             "intersections": [
                 {
                     "id": {"id": int(intersection_id)},
                     "revision": 0,
                     "status": "0000",
                     "moy": int(moy),
-                    "timeStamp": time_mark,
+                    "timeStamp": ms_since_min,
                     "states": states[1],
                 }
             ],
@@ -549,7 +551,7 @@ async def main():
             loop_start = time.time()
 
             # Compute controller state ONCE per tick
-            moy, time_mark = compute_moy_and_time_mark()
+            moy, time_mark, ms_since_min = compute_moy_and_time_mark()
 
             debug_info = {
                 "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
@@ -575,6 +577,7 @@ async def main():
                     intersection_ip,
                     moy,
                     time_mark,
+                    ms_since_min,
                     signal_groups,
                     state_store
                 )
