@@ -318,7 +318,7 @@ async def get_signal_state(ip, community, int_id, sig_grps, state_store, tm):
         }
         )
 
-    print(states)
+    print(f"Current TM: {tm}\r\nStates: {states}")
     return states
 
 
