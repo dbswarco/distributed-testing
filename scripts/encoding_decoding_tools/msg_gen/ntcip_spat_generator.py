@@ -190,12 +190,14 @@ async def get_phase_j2735_states_ntcip(
     # Current timestamp (UTC) for all updates in this cycle
     now_deciseconds = int(datetime.now(timezone.utc).timestamp() * 10)
 
+    # Initialize state store with default values
+    for sg in sig_grps:
+        sg_min_max = await get_phase_j2735_times_ntcip(ip, community, sig_grps, port)
+        state_store.setdefault(sg, {"state": None, "timestamp": None, "min_max": sg_min_max[1].get(sg), "min_ttc": 0, "max_ttc": 0})
+
     # Update state_store and print one-time transitions
     for sg in sig_grps:
         i = sg - 1  # 0-based index
-
-        # TODO: probably only need to do this once?
-        state_store.setdefault(sg, {"state": None, "timestamp": None, "min_max": None, "min_ttc": 0, "max_ttc": 0})
 
         # Determine new state using precedence: Red > Yellow > Green (same as original)
         if r_bits[i]:
@@ -210,11 +212,9 @@ async def get_phase_j2735_states_ntcip(
             continue
 
         prev_state = state_store.get(sg, {}).get("state")
-        # if not state_store.get(sg).get("min_max", None):
-        #     sg_min_max = get_phase_j2735_times_ntcip(ip, community, sig_grps, port)
 
         # Update the store with the latest state & timestamp
-        if prev_state != current_state or prev_state is None:
+        if prev_state != current_state:
             # Get phase timing when transitioning
             sg_min_max = await get_phase_j2735_times_ntcip(ip, community, sig_grps, port)
             if prev_state == STATE_STOP and current_state == STATE_GREEN:
@@ -223,18 +223,18 @@ async def get_phase_j2735_states_ntcip(
 
             state_store[sg]["state"] = current_state
             state_store[sg]["timestamp"] = now_deciseconds
-            state_store[sg]["min_max"] = sg_min_max
+            state_store[sg]["min_max"] = sg_min_max[1].get(sg)
 
-        sg_state_start_ts = now_deciseconds
-        elapsed = now_deciseconds - sg_state_start_ts
         if current_state == STATE_GREEN:
-            state_store[sg]["min_ttc"] = max(sg_min_max[1].get(sg).get('min') - elapsed, 0)
-            state_store[sg]["max_ttc"] = max(sg_min_max[1].get(sg).get('max') - elapsed, 0)
-        else:
-            for i in sig_grps:
-                if i != sg:
-                    state_store[sg]["min_ttc"] += sg_min_max[1].get(i).get('min')
-                    state_store[sg]["max_ttc"] += sg_min_max[1].get(i).get('max')
+            state_store[sg]["min_ttc"] = max(state_store.get(sg).get('min_max').get('min') + now_deciseconds, 0)
+            state_store[sg]["max_ttc"] = max(state_store.get(sg).get('min_max').get('max') + now_deciseconds, 0)
+
+        # SG just changed from green to yellow or it hasn't been set yet
+        elif prev_state in [STATE_GREEN, None]:
+                for i in sig_grps:
+                    if i != sg:
+                        state_store[sg]["min_ttc"] += state_store.get(i).get('min_max').get('min') + now_deciseconds
+                        state_store[sg]["max_ttc"] += state_store.get(i).get('min_max').get('max') + now_deciseconds
 
         if print_on_change:
             print(f"=> SG {sg}: min_ttc: {state_store[sg]["min_ttc"]}, max_ttc: {state_store[sg]["max_ttc"]}")
@@ -314,6 +314,7 @@ async def get_signal_state(ip, community, int_id, sig_grps, state_store, tm):
         }
         )
 
+    print(states)
     return states
 
 
@@ -371,7 +372,7 @@ async def build_spat_for_intersection(
                     "status": "0000",
                     "moy": int(moy),
                     "timeStamp": ms_since_min,
-                    "states": states[1],
+                    "states": states,
                 }
             ],
         },
