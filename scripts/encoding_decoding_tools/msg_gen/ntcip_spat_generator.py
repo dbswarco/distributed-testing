@@ -105,7 +105,6 @@ def clear_phase_timing_cache(ip: str, port: int, sg: int) -> None:
         _phase_timing_locks.pop(key, None)
 
 
-@timed
 async def get_phase_j2735_states_ntcip(
     ip: str,
     community: str,
@@ -195,34 +194,54 @@ async def get_phase_j2735_states_ntcip(
     for sg in sig_grps:
         i = sg - 1  # 0-based index
 
+        # TODO: probably only need to do this once?
+        state_store.setdefault(sg, {"state": None, "timestamp": None, "min_max": None, "min_ttc": 0, "max_ttc": 0})
+
         # Determine new state using precedence: Red > Yellow > Green (same as original)
         if r_bits[i]:
-            new_state = STATE_STOP
+            current_state = STATE_STOP
         elif y_bits[i]:
-            new_state = STATE_CLEARANCE
+            current_state = STATE_CLEARANCE
         elif g_bits[i]:
-            new_state = STATE_GREEN
+            current_state = STATE_GREEN
         else:
             # If no bit is asserted, skip (preserves prior state if any)
             # Alternatively, you could set to "unknown" here if desired.
             continue
 
         prev_state = state_store.get(sg, {}).get("state")
-
-        # Print only when transitioning from stop -> green
-        if print_on_change and prev_state == STATE_STOP and new_state == STATE_GREEN:
-            print(f"[{now_deciseconds}] SG {sg}: stop-And-Remain -> protected-Movement-Allowed")
+        # if not state_store.get(sg).get("min_max", None):
+        #     sg_min_max = get_phase_j2735_times_ntcip(ip, community, sig_grps, port)
 
         # Update the store with the latest state & timestamp
-        state_store[sg] = {
-            "state": new_state,
-            "timestamp": now_deciseconds,
-        }
+        if prev_state != current_state or prev_state is None:
+            # Get phase timing when transitioning
+            sg_min_max = await get_phase_j2735_times_ntcip(ip, community, sig_grps, port)
+            if prev_state == STATE_STOP and current_state == STATE_GREEN:
+                if print_on_change:
+                    print(f"===> [{now_deciseconds}] SG {sg}: stop-And-Remain -> protected-Movement-Allowed\r\n")
+
+            state_store[sg]["state"] = current_state
+            state_store[sg]["timestamp"] = now_deciseconds
+            state_store[sg]["min_max"] = sg_min_max
+
+        sg_state_start_ts = now_deciseconds
+        elapsed = now_deciseconds - sg_state_start_ts
+        if current_state == STATE_GREEN:
+            state_store[sg]["min_ttc"] = max(sg_min_max[1].get(sg).get('min') - elapsed, 0)
+            state_store[sg]["max_ttc"] = max(sg_min_max[1].get(sg).get('max') - elapsed, 0)
+        else:
+            for i in sig_grps:
+                if i != sg:
+                    state_store[sg]["min_ttc"] += sg_min_max[1].get(i).get('min')
+                    state_store[sg]["max_ttc"] += sg_min_max[1].get(i).get('max')
+
+        if print_on_change:
+            print(f"=> SG {sg}: min_ttc: {state_store[sg]["min_ttc"]}, max_ttc: {state_store[sg]["max_ttc"]}")
 
     return state_store
 
 
-@timed
 async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, port: int):
     phase_min_max = {}
 
@@ -270,12 +289,12 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
     return [controller_gmt_moy, phase_min_max]
 
 
-@timed
-async def get_signal_state(ip, community, int_id, sig_grps, tm):
-    sg_states, sg_min_max = await asyncio.gather(
-        get_phase_j2735_states_ntcip(ip, community, sig_grps, 10000 + int_id),
-        get_phase_j2735_times_ntcip(ip, community, sig_grps, 10000 + int_id),
-    )
+async def get_signal_state(ip, community, int_id, sig_grps, state_store, tm):
+    # sg_states, sg_min_max = await asyncio.gather(
+    #     get_phase_j2735_states_ntcip(ip, community, sig_grps, 10000 + int_id, state_store),
+    #     get_phase_j2735_times_ntcip(ip, community, sig_grps, 10000 + int_id),
+    # )
+    sg_states = await get_phase_j2735_states_ntcip(ip, community, sig_grps, 10000 + int_id, state_store)
 
     states = []
     for sg, event_state in sg_states.items():
@@ -287,15 +306,15 @@ async def get_signal_state(ip, community, int_id, sig_grps, tm):
                     "eventState": event_state["state"],
                     "timing": {
                         # Both are INTEGER TimeMark values
-                        "minEndTime": sg_min_max[1].get(sg).get('min') + tm,
-                        "maxEndTime": sg_min_max[1].get(sg).get('max') + tm,
+                        "minEndTime": sg_states.get(sg).get('min_ttc') + tm,
+                        "maxEndTime": sg_states.get(sg).get('max_ttc') + tm
                     },
                 }
             ],
         }
         )
 
-    return sg_min_max[0], states
+    return states
 
 
 def compute_moy_and_time_mark():
@@ -330,13 +349,14 @@ async def build_spat_for_intersection(
     intersection_ip,
     moy,
     time_mark,
-    signal_groups
+    signal_groups,
+    state_store
 ):
     """
     Build a SPaT JER dict for a single intersection, given existing timing/state info.
     """
 
-    states = await get_signal_state(intersection_ip, 'public', intersection_id, signal_groups, time_mark)
+    states = await get_signal_state(intersection_ip, 'public', intersection_id, signal_groups, state_store, time_mark)
 
     spat = {
         "messageId": 19,
@@ -514,6 +534,8 @@ async def main():
     sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     target = (args.ip, args.port)
 
+    state_store = {}
+
     print("Press Ctrl+C to stop\n")
     print(
         f"Intersections: {[i['id'] for i in intersections]} | "
@@ -553,7 +575,8 @@ async def main():
                     intersection_ip,
                     moy,
                     time_mark,
-                    signal_groups
+                    signal_groups,
+                    state_store
                 )
 
                 if args.verbose:
