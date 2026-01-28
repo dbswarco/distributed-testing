@@ -225,16 +225,16 @@ async def get_phase_j2735_states_ntcip(
             state_store[sg]["timestamp"] = now_deciseconds
             state_store[sg]["min_max"] = sg_min_max[1].get(sg)
 
-        if current_state == STATE_GREEN:
-            state_store[sg]["min_ttc"] = max(state_store.get(sg).get('min_max').get('min') + now_deciseconds, 0)
-            state_store[sg]["max_ttc"] = max(state_store.get(sg).get('min_max').get('max') + now_deciseconds, 0)
+            if current_state == STATE_GREEN:
+                state_store[sg]["min_ttc"] = max(state_store.get(sg).get('min_max').get('min'), 0)
+                state_store[sg]["max_ttc"] = max(state_store.get(sg).get('min_max').get('max'), 0)
 
-        # SG just changed from green to yellow or it hasn't been set yet
-        elif prev_state in [STATE_GREEN, None]:
-                for i in sig_grps:
-                    if i != sg:
-                        state_store[sg]["min_ttc"] += state_store.get(i).get('min_max').get('min') + now_deciseconds
-                        state_store[sg]["max_ttc"] += state_store.get(i).get('min_max').get('max') + now_deciseconds
+            # SG just changed from green to yellow or it hasn't been set yet
+            elif prev_state in [STATE_GREEN, None]:
+                    for i in sig_grps:
+                        if i != sg:
+                            state_store[sg]["min_ttc"] += state_store.get(i).get('min_max').get('min')
+                            state_store[sg]["max_ttc"] += state_store.get(i).get('min_max').get('max')
 
         if print_on_change:
             print(f"=> SG {sg}: min_ttc: {state_store[sg]["min_ttc"]}, max_ttc: {state_store[sg]["max_ttc"]}")
