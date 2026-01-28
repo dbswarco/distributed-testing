@@ -193,7 +193,7 @@ async def get_phase_j2735_states_ntcip(
     # Initialize state store with default values
     for sg in sig_grps:
         sg_min_max = await get_phase_j2735_times_ntcip(ip, community, sig_grps, port)
-        state_store.setdefault(sg, {"state": None, "timestamp": None, "min_max": sg_min_max[1].get(sg), "min_ttc": 0, "max_ttc": 0})
+        state_store.setdefault(sg, {"state": None, "start_tm": None, "min_max": sg_min_max[1].get(sg), "min_ttc": 0, "max_ttc": 0})
 
     # Update state_store and print one-time transitions
     for sg in sig_grps:
@@ -222,7 +222,7 @@ async def get_phase_j2735_states_ntcip(
                     print(f"===> [{now_deciseconds}] SG {sg}: stop-And-Remain -> protected-Movement-Allowed\r\n")
 
             state_store[sg]["state"] = current_state
-            state_store[sg]["timestamp"] = now_deciseconds
+            state_store[sg]["start_tm"] = compute_moy_and_time_mark()[1]
             state_store[sg]["min_max"] = sg_min_max[1].get(sg)
 
             if current_state == STATE_GREEN:
@@ -306,8 +306,8 @@ async def get_signal_state(ip, community, int_id, sig_grps, state_store, tm):
                     "eventState": sg_state.get('state'),
                     "timing": {
                         # Both are INTEGER TimeMark values
-                        "minEndTime": sg_state.get('min_ttc') + tm,
-                        "maxEndTime": sg_state.get('max_ttc') + tm,
+                        "minEndTime": sg_state.get('min_ttc') + sg_state.get('start_tm'),
+                        "maxEndTime": sg_state.get('max_ttc') + sg_state.get('start_tm')
                     },
                 }
             ],
