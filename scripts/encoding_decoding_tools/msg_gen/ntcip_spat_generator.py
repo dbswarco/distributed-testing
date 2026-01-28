@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import time
 import json
 import socket
 import os
@@ -9,11 +8,14 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from dataclasses import dataclass
-from typing import Dict, Tuple
-
+from typing import Any, Dict, List, Optional, Tuple
 
 import j2735_202409
 from ntcip_snmp_utils import NTCIP1202, send_snmp_set_command, get_int, get_oid, Counter32
+
+STATE_STOP = "stop-And-Remain"
+STATE_CLEARANCE = "protected-clearance"
+STATE_GREEN = "protected-Movement-Allowed"
 
 MessageFrame = j2735_202409.MessageFrame.MessageFrame
 
@@ -104,24 +106,71 @@ def clear_phase_timing_cache(ip: str, port: int, sg: int) -> None:
 
 
 @timed
-async def get_phase_j2735_states_ntcip(ip: str, community: str, sig_grps: list, port: int) -> dict:
+async def get_phase_j2735_states_ntcip(
+    ip: str,
+    community: str,
+    sig_grps: List[int],
+    port: int,
+    state_store: Optional[Dict[int, Dict[str, Any]]] = None,
+    print_on_change: bool = True,
+) -> Dict[int, Dict[str, Any]]:
+    """
+    Fetch per-phase bits from NTCIP 1202, derive the J2735-style state per signal group,
+    and update a persistent state_store with the current state and timestamp.
 
-    def bits_lsb_first(byte_val: int) -> list[int]:
+    It prints a single console message when a signal group's state transitions from
+    'stop-And-Remain' -> 'protected-Movement-Allowed' (green).
+
+    Parameters
+    ----------
+    ip : str
+        Controller IP address.
+    community : str
+        SNMP community string.
+    sig_grps : List[int]
+        Signal groups (phases) to evaluate (1-based).
+    port : int
+        SNMP port.
+    state_store : Optional[Dict[int, Dict[str, Any]]]
+        Mutable dict tracking per-signal-group state and last timestamp.
+        If None, a new dict will be created (not persisted across calls).
+    print_on_change : bool
+        If True, prints once on transition from stop-And-Remain to protected-Movement-Allowed.
+
+    Returns
+    -------
+    Dict[int, Dict[str, Any]]
+        Updated state_store mapping:
+        {
+          sg: {
+            "state": "<stop-And-Remain|protected-clearance|protected-Movement-Allowed>",
+            "timestamp": "<ISO-8601 UTC>",
+          },
+          ...
+        }
+    """
+
+    # Initialize a store if the caller didn't provide one.
+    if state_store is None:
+        state_store = {}
+
+    def bits_lsb_first(byte_val: int) -> List[int]:
         # Return 8 bits least-significant-bit first: bit 0 -> phase 1 (or 9), bit 7 -> phase 8 (or 16)
         return [(byte_val >> i) & 1 for i in range(8)]
 
+    # Determine if any requested signal group exceeds 8 (i.e., we need indexes 1..2 for 1..16 phases)
     if any(v > 8 for v in sig_grps):
         # Index 1: phases 1..8, Index 2: phases 9..16
         g1, g2, y1, y2, r1, r2 = await asyncio.gather(
-            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Greens, '1'), port),
-            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Greens, '2'), port),
-            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Yellows, '1'), port),
-            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Yellows, '2'), port),
-            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Reds, '1'), port),
-            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Reds, '2'), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Greens, "1"), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Greens, "2"), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Yellows, "1"), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Yellows, "2"), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Reds, "1"), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Reds, "2"), port),
         )
 
-        # Build per-phase bit arrays for phases 1..16 (not strings)
+        # Build per-phase bit arrays for phases 1..16
         g_bits = bits_lsb_first(g1) + bits_lsb_first(g2)  # [phase1..phase16]
         y_bits = bits_lsb_first(y1) + bits_lsb_first(y2)
         r_bits = bits_lsb_first(r1) + bits_lsb_first(r2)
@@ -129,34 +178,53 @@ async def get_phase_j2735_states_ntcip(ip: str, community: str, sig_grps: list, 
     else:
         # Index 1: phases 1..8
         g1, y1, r1 = await asyncio.gather(
-            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Greens, '1'), port),
-            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Yellows, '1'), port),
-            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Reds, '1'), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Greens, "1"), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Yellows, "1"), port),
+            get_int(ip, community, get_oid(NTCIP1202.Phase.StatusGroup.Reds, "1"), port),
         )
 
-        # Build per-phase bit arrays for phases 1..8 (not strings)
+        # Build per-phase bit arrays for phases 1..8
         g_bits = bits_lsb_first(g1)  # [phase1..phase8]
         y_bits = bits_lsb_first(y1)
         r_bits = bits_lsb_first(r1)
 
-    states = {}
+    # Current timestamp (UTC) for all updates in this cycle
+    now_deciseconds = int(datetime.now(timezone.utc).timestamp() * 10)
+
+    # Update state_store and print one-time transitions
     for sg in sig_grps:
         i = sg - 1  # 0-based index
+
+        # Determine new state using precedence: Red > Yellow > Green (same as original)
         if r_bits[i]:
-            states[sg] = "stop-And-Remain"
+            new_state = STATE_STOP
         elif y_bits[i]:
-            states[sg] = "protected-clearance"
+            new_state = STATE_CLEARANCE
         elif g_bits[i]:
-            states[sg] = "protected-Movement-Allowed"
+            new_state = STATE_GREEN
         else:
+            # If no bit is asserted, skip (preserves prior state if any)
+            # Alternatively, you could set to "unknown" here if desired.
             continue
 
-    return states
+        prev_state = state_store.get(sg, {}).get("state")
+
+        # Print only when transitioning from stop -> green
+        if print_on_change and prev_state == STATE_STOP and new_state == STATE_GREEN:
+            print(f"[{now_deciseconds}] SG {sg}: stop-And-Remain -> protected-Movement-Allowed")
+
+        # Update the store with the latest state & timestamp
+        state_store[sg] = {
+            "state": new_state,
+            "timestamp": now_deciseconds,
+        }
+
+    return state_store
 
 
 @timed
 async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, port: int):
-    time_to_change = {}
+    phase_min_max = {}
 
     # Calculate epoch deciseconds for Jan 1, 00:00 UTC of current year
     current_year_offset = int(datetime(datetime.now(timezone.utc).year, 1, 1, 0, 0, 0,
@@ -181,36 +249,36 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
             min_ds = int(entry.min_grn) * 10
             # split is in seconds; yellow/red are deciseconds -> convert to seconds before subtraction, then back to ds
             max_ds = int(split - (entry.yellow / 10) - (entry.red / 10)) * 10
-            time_to_change[sg] = {'min': min_ds, 'max': max_ds}
+            phase_min_max[sg] = {'min': min_ds, 'max': max_ds}
 
     else:
         for sg in sig_grps:
             entry = await _ensure_phase_timing_cached(ip, community, port, sg)
             min_ds = int(entry.min_grn) * 10
             max_ds = int(entry.max_grn) * 10
-            time_to_change[sg] = {'min': min_ds, 'max': max_ds}
+            phase_min_max[sg] = {'min': min_ds, 'max': max_ds}
 
-    if time_to_change[sg]['min'] > 35999:
-        print(f"min time_to_change for sg {sg} goes over the hour ({time_to_change[sg]['min']}), subtracting 36000")
-        time_to_change[sg]['min'] -= 36000
+    if phase_min_max[sg]['min'] > 35999:
+        print(f"min time_to_change for sg {sg} goes over the hour ({phase_min_max[sg]['min']}), subtracting 36000")
+        phase_min_max[sg]['min'] -= 36000
     
-    if time_to_change[sg]['max'] > 35999:
-        print(f"min time_to_change for sg {sg} goes over the hour ({time_to_change[sg]['max']}), subtracting 36000")
-        time_to_change[sg]['max'] -= 36000
+    if phase_min_max[sg]['max'] > 35999:
+        print(f"min time_to_change for sg {sg} goes over the hour ({phase_min_max[sg]['max']}), subtracting 36000")
+        phase_min_max[sg]['max'] -= 36000
 
     controller_gmt_moy = (controller_localtz_epoch - tz_differential) * 10 - current_year_offset
-    return [controller_gmt_moy, time_to_change]
+    return [controller_gmt_moy, phase_min_max]
 
 
 @timed
 async def get_signal_state(ip, community, int_id, sig_grps, tm):
-    sg_states, sg_ttc = await asyncio.gather(
+    sg_states, sg_min_max = await asyncio.gather(
         get_phase_j2735_states_ntcip(ip, community, sig_grps, 10000 + int_id),
         get_phase_j2735_times_ntcip(ip, community, sig_grps, 10000 + int_id),
     )
 
     states = []
-    for sg, event_state in sg_states.items():
+    for sg, event_state, event_timestamp in sg_states.items():
         states.append(
             {
             "signalGroup": sg,
@@ -219,15 +287,15 @@ async def get_signal_state(ip, community, int_id, sig_grps, tm):
                     "eventState": event_state,
                     "timing": {
                         # Both are INTEGER TimeMark values
-                        "minEndTime": sg_ttc[1].get(sg).get('min') + tm,
-                        "maxEndTime": sg_ttc[1].get(sg).get('max') + tm,
+                        "minEndTime": sg_min_max[1].get(sg).get('min') + tm,
+                        "maxEndTime": sg_min_max[1].get(sg).get('max') + tm,
                     },
                 }
             ],
         }
         )
 
-    return sg_ttc[0], states
+    return sg_min_max[0], states
 
 
 def compute_moy_and_time_mark():
