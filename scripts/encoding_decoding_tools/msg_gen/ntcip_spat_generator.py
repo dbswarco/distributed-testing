@@ -278,13 +278,13 @@ async def get_signal_state(ip, community, int_id, sig_grps, tm):
     )
 
     states = []
-    for sg, event_state, event_timestamp in sg_states.items():
+    for sg, event_state in sg_states.items():
         states.append(
             {
             "signalGroup": sg,
             "state-time-speed": [
                 {
-                    "eventState": event_state,
+                    "eventState": event_state["state"],
                     "timing": {
                         # Both are INTEGER TimeMark values
                         "minEndTime": sg_min_max[1].get(sg).get('min') + tm,
