@@ -235,13 +235,13 @@ async def get_phase_j2735_states_ntcip(
 
             # SG just changed from yellow to red or it hasn't been set yet
             elif prev_state in [STATE_CLEARANCE, None]:
-                    for i in sig_grps:
-                        if i != sg and sg != 8:
-                            state_store[sg]["min_ttc"] += state_store.get(i).get('min_max').get('min')
-                            state_store[sg]["max_ttc"] += state_store.get(i).get('min_max').get('max')
-                        if sg == 8:
-                            state_store[sg]["min_ttc"] += state_store.get(4).get('min_max').get('min')
-                            state_store[sg]["max_ttc"] += state_store.get(4).get('min_max').get('max')
+                for i in sig_grps:
+                    if i != sg and i != 8:
+                        state_store[sg]["min_ttc"] += state_store.get(i).get('min_max').get('min')
+                        state_store[sg]["max_ttc"] += state_store.get(i).get('min_max').get('max')
+                    elif i == 8:
+                        state_store[sg]["min_ttc"] = state_store.get(4).get('min_max').get('min')
+                        state_store[sg]["max_ttc"] = state_store.get(4).get('min_max').get('max')
 
         if print_on_change:
             print(f"=> SG {sg}: min_ttc: {state_store[sg]["min_ttc"]}, max_ttc: {state_store[sg]["max_ttc"]}")
