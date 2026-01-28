@@ -229,8 +229,12 @@ async def get_phase_j2735_states_ntcip(
                 state_store[sg]["min_ttc"] = max(state_store.get(sg).get('min_max').get('min'), 0)
                 state_store[sg]["max_ttc"] = max(state_store.get(sg).get('min_max').get('max'), 0)
 
-            # SG just changed from green to yellow or it hasn't been set yet
-            elif prev_state in [STATE_GREEN, None]:
+            elif current_state == STATE_CLEARANCE:
+                state_store[sg]["min_ttc"] = max(state_store.get(sg).get('min_max').get('yel'), 0)
+                state_store[sg]["max_ttc"] = max(state_store.get(sg).get('min_max').get('yel'), 0)
+
+            # SG just changed from yellow to red or it hasn't been set yet
+            elif prev_state in [STATE_CLEARANCE, None]:
                     for i in sig_grps:
                         if i != sg:
                             state_store[sg]["min_ttc"] += state_store.get(i).get('min_max').get('min')
@@ -268,14 +272,14 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
             min_ds = int(entry.min_grn) * 10
             # split is in seconds; yellow/red are deciseconds -> convert to seconds before subtraction, then back to ds
             max_ds = int(split - (entry.yellow / 10) - (entry.red / 10)) * 10
-            phase_min_max[sg] = {'min': min_ds, 'max': max_ds}
+            phase_min_max[sg] = {'min': min_ds, 'max': max_ds, 'yel': entry.yellow}
 
     else:
         for sg in sig_grps:
             entry = await _ensure_phase_timing_cached(ip, community, port, sg)
             min_ds = int(entry.min_grn) * 10
             max_ds = int(entry.max_grn) * 10
-            phase_min_max[sg] = {'min': min_ds, 'max': max_ds}
+            phase_min_max[sg] = {'min': min_ds, 'max': max_ds, 'yel': entry.yellow}
 
     if phase_min_max[sg]['min'] > 35999:
         print(f"min time_to_change for sg {sg} goes over the hour ({phase_min_max[sg]['min']}), subtracting 36000")
