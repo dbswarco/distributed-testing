@@ -311,10 +311,10 @@ async def get_signal_state(ip, community, int_id, sig_grps, state_store, tm):
         min_end_time = sg_state.get('min_ttc') + sg_state.get('start_tm')
         max_end_time = sg_state.get('max_ttc') + sg_state.get('start_tm')
         if min_end_time - tm < 0:
-            min_end_time = tm + sg_state.get('min_max').get('min')
+            min_end_time = tm + sg_state.get('min_max').get('yel')
             print(f"Signal group {sg} is extending beyond min_end_time!")
         if max_end_time - tm < 0:
-            max_end_time = tm + sg_state.get('min_max').get('min')
+            max_end_time = tm + sg_state.get('min_max').get('yel')
             print(f"Signal group {sg} is extending beyond max_end_time!")
         states.append(
             {
