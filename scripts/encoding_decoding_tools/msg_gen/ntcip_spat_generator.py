@@ -273,8 +273,6 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
         ]
         splits = await asyncio.gather(*split_tasks)
 
-        local_cycle = cycle_clock       # NTCIP cycle clock counts down from cycle length so no need to do any math here
-
         for sg, split in zip(sig_grps, splits):
             entry = await _ensure_phase_timing_cached(ip, community, port, sg)
             min_ds = int(entry.min_grn) * 10
@@ -282,8 +280,9 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
             max_ds = int(split - (entry.yellow / 10) - (entry.red / 10)) * 10
             phase_min_max[sg] = {'min': min_ds, 'max': max_ds, 'yel': entry.yellow}
             if sg == 2:
-                min_ds += (cycle_length - local_cycle) * 10
-                max_ds += (cycle_length - local_cycle) * 10
+                # NTCIP cycle clock counts down from cycle length so no need to do any math here
+                min_ds += cycle_clock * 10
+                max_ds += cycle_clock * 10
 
     else:
         for sg in sig_grps:
