@@ -303,6 +303,14 @@ async def get_signal_state(ip, community, int_id, sig_grps, state_store, tm):
 
     states = []
     for sg, sg_state in sg_states.items():
+        min_end_time = sg_state.get('min_ttc') + sg_state.get('start_tm')
+        max_end_time = sg_state.get('max_ttc') + sg_state.get('start_tm')
+        if min_end_time < 0:
+            print(f"min_end_time for sg {sg} less than zero! {min_end_time}")
+            raise ValueError
+        if max_end_time < 0:
+            print(f"max_end_time for sg {sg} less than zero! {max_end_time}")
+            raise ValueError
         states.append(
             {
             "signalGroup": sg,
@@ -311,8 +319,8 @@ async def get_signal_state(ip, community, int_id, sig_grps, state_store, tm):
                     "eventState": sg_state.get('state'),
                     "timing": {
                         # Both are INTEGER TimeMark values
-                        "minEndTime": sg_state.get('min_ttc') + sg_state.get('start_tm'),
-                        "maxEndTime": sg_state.get('max_ttc') + sg_state.get('start_tm')
+                        "minEndTime": min_end_time,
+                        "maxEndTime": max_end_time
                     },
                 }
             ],
