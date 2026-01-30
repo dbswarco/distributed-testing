@@ -38,6 +38,9 @@ class NTCIP1202:
             Time = '1.3.6.1.4.1.1206.4.2.1.4.9.1.3'
         class Pattern(StrEnum):
             Status = '1.3.6.1.4.1.1206.4.2.1.4.10'
+            CycleTime = '1.3.6.1.4.1.1206.4.2.1.4.7.1.2'
+        class Cycle(StrEnum):
+            Status = '1.3.6.1.4.1.1206.4.2.1.4.12'
     class Controller(StrEnum):
         LocalTime = '1.3.6.1.4.1.1206.4.2.6.3.6'
         StandardTimeZone = '1.3.6.1.4.1.1206.4.2.6.3.5'

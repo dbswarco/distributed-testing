@@ -256,6 +256,11 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
 
     ptn = await get_int(ip, community, get_oid(NTCIP1202.Coord.Pattern.Status), port)
 
+    cycle_length, cycle_clock = await asyncio.gather(
+        get_int(ip, community, get_oid(NTCIP1202.Coord.Pattern.CycleTime) + '.' + str(ptn), port),
+        get_int(ip, community, get_oid(NTCIP1202.Coord.Cycle.Status), port)
+    )
+
     controller_localtz_epoch, tz_differential = await asyncio.gather(
         get_int(ip, community, get_oid(NTCIP1202.Controller.LocalTime), port),
         get_int(ip, community, get_oid(NTCIP1202.Controller.StandardTimeZone), port),
@@ -268,12 +273,17 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
         ]
         splits = await asyncio.gather(*split_tasks)
 
+        local_cycle = cycle_clock       # NTCIP cycle clock counts down from cycle length so no need to do any math here
+
         for sg, split in zip(sig_grps, splits):
             entry = await _ensure_phase_timing_cached(ip, community, port, sg)
             min_ds = int(entry.min_grn) * 10
             # split is in seconds; yellow/red are deciseconds -> convert to seconds before subtraction, then back to ds
             max_ds = int(split - (entry.yellow / 10) - (entry.red / 10)) * 10
             phase_min_max[sg] = {'min': min_ds, 'max': max_ds, 'yel': entry.yellow}
+            if sg == 2:
+                min_ds += (cycle_length - local_cycle) * 10
+                max_ds += (cycle_length - local_cycle) * 10
 
     else:
         for sg in sig_grps:
@@ -295,22 +305,18 @@ async def get_phase_j2735_times_ntcip(ip: str, community: str, sig_grps: list, p
 
 
 async def get_signal_state(ip, community, int_id, sig_grps, state_store, tm):
-    # sg_states, sg_min_max = await asyncio.gather(
-    #     get_phase_j2735_states_ntcip(ip, community, sig_grps, 10000 + int_id, state_store),
-    #     get_phase_j2735_times_ntcip(ip, community, sig_grps, 10000 + int_id),
-    # )
-    sg_states = await get_phase_j2735_states_ntcip(ip, community, sig_grps, 10000 + int_id, state_store)
+    sg_states = await get_phase_j2735_states_ntcip(ip, community, sig_grps, 10000 + int_id, state_store, False)
 
     states = []
     for sg, sg_state in sg_states.items():
         min_end_time = sg_state.get('min_ttc') + sg_state.get('start_tm')
         max_end_time = sg_state.get('max_ttc') + sg_state.get('start_tm')
-        if min_end_time < 0:
-            print(f"min_end_time for sg {sg} less than zero! {min_end_time}")
-            raise ValueError
-        if max_end_time < 0:
-            print(f"max_end_time for sg {sg} less than zero! {max_end_time}")
-            raise ValueError
+        if min_end_time - tm < 0:
+            min_end_time = tm
+            print(f"Signal group {sg} is extending beyond min_end_time!")
+        if max_end_time - tm < 0:
+            max_end_time = tm
+            print(f"Signal group {sg} is extending beyond max_end_time!")
         states.append(
             {
             "signalGroup": sg,
@@ -327,7 +333,12 @@ async def get_signal_state(ip, community, int_id, sig_grps, state_store, tm):
         }
         )
 
-    print(f"Current TM: {tm}\r\nStates: {states}")
+    print(f"Current TM: {tm}")
+    for item in states:
+        sg = item["signalGroup"]
+        timing = item["state-time-speed"][0]["timing"]
+        print(f"SG: {sg}, min: {timing['minEndTime']}, max: {timing['maxEndTime']}")
+
     return states
 
 
